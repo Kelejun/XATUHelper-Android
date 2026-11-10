@@ -1,20 +1,21 @@
 name: Android unsigned build
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 22 * * *" # 每天凌晨 06:00 (UTC时间22点) 构建一次
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: xatune-prerelease
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Build unsigned release APKs
+    if: github.ref == 'refs/heads/main'
+    name:  Android prerelease build
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -43,20 +44,84 @@ jobs:
       - name: Build unsigned APKs
         run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
 
-      - name: Name unsigned APKs
+      - name: Sign APKs
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          KEYSTORE="$RUNNER_TEMP/xatune-signing.jks"
+          trap 'rm -f "$KEYSTORE"' EXIT
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode > "$KEYSTORE"
+
+          chmod 600 "$KEYSTORE"
+
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          APK_DIR="app/build/outputs/apk/release"
+
+          shopt -s nullglob
+          apks=("$APK_DIR"/*-unsigned.apk)
+
+          if [[ ${#apks[@]} -ne 4 ]]; then
+            echo "Expected 4 unsigned APKs, found ${#apks[@]}"
+            exit 1
+          fi
+
+          for apk in "${apks[@]}"; do
+            signed="${apk%-unsigned.apk}-signed.apk"
+
+            "$APKSIGNER" sign \
+              --ks "$KEYSTORE" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+              --key-pass env:ANDROID_KEY_PASSWORD \
+              --out "$signed" \
+              "$apk"
+
+            "$APKSIGNER" verify --verbose --print-certs "$signed"
+          done
+
+      - name: Name signed APKs
         id: apks
         shell: bash
         run: |
           set -euo pipefail
+
           apk_dir=app/build/outputs/apk/release
           version_name=$(jq -er '.elements[0].versionName' "$apk_dir/output-metadata.json")
           version_code=$(jq -er '.elements[0].versionCode' "$apk_dir/output-metadata.json")
           commit=$(git rev-parse HEAD)
+
           prefix="XATune-v${version_name}.r${version_code}.${commit:0:7}"
-          mkdir -p artifacts
+
+          mkdir -p artifacts release-assets
+
           for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-            cp "$apk_dir/app-${abi}-release-unsigned.apk" "artifacts/${prefix}-${abi}.apk"
+            source_apk="$apk_dir/app-${abi}-release-signed.apk"
+
+            if [[ ! -f "$source_apk" ]]; then
+              echo "Missing signed APK: $source_apk"
+              exit 1
+            fi
+
+            # Actions Artifact
+            cp "$source_apk" "artifacts/${prefix}-${abi}.apk"
+
+            # GitHub Release
+            cp "$source_apk" "release-assets/${prefix}-${abi}.apk"
           done
+
+          (
+            cd release-assets
+            sha256sum "${prefix}-"*.apk > SHA256SUMS
+          )
+
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
 
       # Each upload contains exactly one APK, with no surrounding ZIP archive.
@@ -91,3 +156,57 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish rolling prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag=Prerelease
+
+          # 1. 将固定 Tag 移动到本次构建的 Commit
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
+              -f sha="${GITHUB_SHA}" \
+              -F force=true >/dev/null
+          else
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${tag}" \
+              -f sha="${GITHUB_SHA}" >/dev/null
+          fi
+
+          # 2. 创建或更新固定 Release
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --title "XATune Prerelease" \
+              --notes "Automatically updated by GitHub Actions. Commit: ${GITHUB_SHA}" \
+              --prerelease
+          else
+            gh release create "$tag" \
+              --verify-tag \
+              --title "XATune Prerelease" \
+              --notes "Automatically updated by GitHub Actions." \
+              --prerelease
+          fi
+
+          # 先上传本次构建的文件
+          gh release upload "$tag" \
+            release-assets/* \
+            --clobber
+
+          # 上传成功后，清理不属于本次构建的旧附件
+          while IFS= read -r asset; do
+            [[ -z "$asset" ]] && continue
+
+            if [[ ! -f "release-assets/$asset" ]]; then
+              gh release delete-asset "$tag" "$asset" --yes
+            fi
+          done < <(
+            gh release view "$tag" \
+              --json assets \
+              --jq '.assets[].name'
+          )
