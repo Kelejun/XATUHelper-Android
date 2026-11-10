@@ -1,0 +1,93 @@
+name: Android unsigned build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned release APKs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Install Android SDK packages
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "platforms;android-36" "build-tools;36.0.0"
+
+      # Release has no signingConfig. Other variants and the packaging
+      # script use development signing and must not be built here.
+      - name: Build unsigned APKs
+        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Name unsigned APKs
+        id: apks
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_dir=app/build/outputs/apk/release
+          version_name=$(jq -er '.elements[0].versionName' "$apk_dir/output-metadata.json")
+          version_code=$(jq -er '.elements[0].versionCode' "$apk_dir/output-metadata.json")
+          commit=$(git rev-parse HEAD)
+          prefix="XATune-v${version_name}.r${version_code}.${commit:0:7}"
+          mkdir -p artifacts
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            cp "$apk_dir/app-${abi}-release-unsigned.apk" "artifacts/${prefix}-${abi}.apk"
+          done
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+
+      # Each upload contains exactly one APK, with no surrounding ZIP archive.
+      - name: Upload arm64-v8a APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: artifacts/${{ steps.apks.outputs.prefix }}-arm64-v8a.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: artifacts/${{ steps.apks.outputs.prefix }}-armeabi-v7a.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: artifacts/${{ steps.apks.outputs.prefix }}-x86.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: artifacts/${{ steps.apks.outputs.prefix }}-x86_64.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
