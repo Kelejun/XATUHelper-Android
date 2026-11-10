@@ -1,3 +1,5 @@
+![XATune](docs/assets/readme-header.png)
+
 # XATune for Android
 
 仙宫小助手 Android 版，从教务官网自动拉取课程表、考试安排、学分等信息。同时提供查询宿舍电费、签到与请销假等小功能。
