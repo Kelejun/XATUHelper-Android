@@ -46,7 +46,7 @@ internal fun UpdateSettingsPanel(
             Text("其他服务器暂未接入，目前仅保存仓库网址。", style = MaterialTheme.typography.bodySmall)
         }
         ToggleRow("自动检测更新", "每次启动和每天 9:00 检测，系统省电限制可能延后后台检测", settings.automatic, onAutomatic,
-            switchModifier = Modifier.testTag("automaticUpdates"))
+            switchModifier = Modifier.testTag("automaticUpdates"), contentPadding = PaddingValues(vertical = 12.dp))
         if (update.logs.isEmpty()) Text("暂无更新检测记录", style = MaterialTheme.typography.bodySmall)
         update.logs.forEachIndexed { index, log ->
             val time = SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(log.at))

@@ -12,16 +12,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xatune.app.data.UpdateChannel
 import com.xatune.app.data.UpdateServer
 import com.xatune.app.BuildConfig
+import com.xatune.app.R
 import com.xatune.app.model.*
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+private val qqGroupNumber = "934935585"
+private val qqGroupJoinUrl = "https://qm.qq.com/q/k1mGynJlrW"
 
 private fun number(value: Double): String = String.format(Locale.CHINA, "%.2f", value).trimEnd('0').trimEnd('.')
 private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZone(SchoolZone).format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
@@ -292,6 +298,10 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
                     UpdateSettingsPanel(update, onUpdateChannel, onUpdateServer, onUpdateRepository, onAutomaticUpdates, onCheckUpdates)
                 }
             } }
+            item {
+                ServiceRow("QQ讨论群", "群号：$qqGroupNumber", ImageVector.vectorResource(R.drawable.ic_qq_outline),
+                    Modifier.testTag("qqDiscussionGroup"), selectableDetail = true) { uriHandler.openUri(qqGroupJoinUrl) }
+            }
             item { ServiceRow("GitHub 仓库", "Kelejun/XATUHelper-Android", Icons.Default.Code, Modifier.testTag("githubRepository")) { uriHandler.openUri("https://github.com/Kelejun/XATUHelper-Android") } }
             item { ServiceRow("隐私政策", "查看数据使用与删除方式", Icons.Default.PrivacyTip) { privacy = true } }
             item { Spacer(Modifier.height(12.dp)); OutlinedButton(onClick = { confirmLogout = true }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("logout"), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("退出登录") } }
