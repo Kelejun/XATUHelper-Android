@@ -60,13 +60,13 @@ import java.time.format.DateTimeFormatter
         else -> MainShell(state, model, { relogin = true })
     }
     }
-    UpdateNotification(update, model::dismissUpdate, model::updateLinkFailed)
+    UpdateNotification(update, model::dismissUpdate)
     if (!state.starting && !state.showWebLogin && state.notice == null && update.offer == null) {
         announcements?.let { AnnouncementNotification(it) }
     }
 }
 
-@Composable internal fun UpdateNotification(update: UpdateUi, onDismiss: () -> Unit, onLinkFailed: () -> Unit) {
+@Composable internal fun UpdateNotification(update: UpdateUi, onDismiss: () -> Unit) {
     val release = update.offer ?: return
     val notes = remember(release.notes) { updateNotesForDisplay(release.notes) }
     var confirm by remember(release.version) { mutableStateOf(false) }
@@ -81,7 +81,7 @@ import java.time.format.DateTimeFormatter
             if (linkError) Text("没有可打开 GitHub 的浏览器，请安装浏览器后重试。", color = MaterialTheme.colorScheme.error)
         } },
         confirmButton = { TextButton(onClick = {
-            runCatching { uriHandler.openUri(release.url) }.onSuccess { onDismiss() }.onFailure { linkError = true; onLinkFailed() }
+            runCatching { uriHandler.openUri(release.url) }.onSuccess { onDismiss() }.onFailure { linkError = true }
         }) { Text("前往 GitHub 下载") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } })
 }
@@ -152,7 +152,7 @@ import java.time.format.DateTimeFormatter
     val direction = remember(page) { if (page == null || parentPage(previousPage) == page) -1 else 1 }
     SideEffect { previousPage = page }
     ScreenTransition(page, modifier = backModifier, direction = direction) { destination -> when (destination) {
-        "settings" -> SettingsScreen(state, { page = null }, { showCalibration = true }, onRelogin, model::logout, { page = "notifications" }, { page = "widgets" }, model::showWeekend, model::showDiagnostics, campusState, { model.campus?.autoElectric(it) }, update, { model.checkUpdates(manual = true) }, onCheckinLocation = { page = "checkinLocation" })
+        "settings" -> SettingsScreen(state, { page = null }, { showCalibration = true }, onRelogin, model::logout, { page = "notifications" }, { page = "widgets" }, model::showWeekend, model::showDiagnostics, campusState, { model.campus?.autoElectric(it) }, update, { model.checkUpdates(manual = true) }, onCheckinLocation = { page = "checkinLocation" }, onUpdateChannel = model::updateChannel, onUpdateServer = model::updateServer, onUpdateRepository = model::updateRepositoryUrl, onAutomaticUpdates = model::automaticUpdates)
         "electricity" -> model.campus?.let { ElectricityScreen(it, { page = null }, { page = "charge" }) }
         "calendar" -> model.campus?.let { CalendarScreen(it, { page = null }) }
         "notifications" -> model.campus?.let { ReminderScreen(it, { page = "settings" }) }

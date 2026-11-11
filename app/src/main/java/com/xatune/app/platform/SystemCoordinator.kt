@@ -84,7 +84,7 @@ class RestoreReceiver : BroadcastReceiver() {
         if (intent.action !in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
                 Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED, AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED)) return
         val result = goAsync()
-        CoroutineScope(Dispatchers.IO).launch { try { SystemCoordinator.synchronize(context); SystemCoordinator.maintain(context) } finally { result.finish() } }
+        CoroutineScope(Dispatchers.IO).launch { try { SystemCoordinator.synchronize(context); SystemCoordinator.maintain(context); UpdateScheduler.synchronize(context) } finally { result.finish() } }
     }
 }
 class MaintenanceWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {

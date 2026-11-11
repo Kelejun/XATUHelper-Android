@@ -1,5 +1,6 @@
 package com.xatune.app
 
+import kotlinx.coroutines.launch
 import android.app.Application
 import android.webkit.CookieManager
 import com.xatune.app.data.*
@@ -23,5 +24,8 @@ class HelperApplication : Application() {
         repository = TimetableRepository(store, vault, cookies, SchoolNetwork(cookies))
         campusRepository = CampusRepository(this, store, repository, PayNetwork(cookies))
         com.xatune.app.platform.SystemCoordinator.maintain(this)
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            com.xatune.app.platform.UpdateScheduler.synchronize(this@HelperApplication)
+        }
     }
 }

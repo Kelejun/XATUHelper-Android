@@ -54,7 +54,9 @@ jobs:
 
       # 两个渠道都构建未签名的 release 变体，再使用同一套 Secrets 签名。
       - name: 单元测试、Lint 与构建未签名 APK
-        run: ./gradlew --no-daemon --stacktrace :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
+        env:
+          PUSH_CHANNEL: ${{ inputs.channel }}
+        run: ./gradlew --no-daemon --stacktrace -PpushChannel="$PUSH_CHANNEL" :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
 
       - name: 签名 APK
         env:

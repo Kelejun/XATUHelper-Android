@@ -22,35 +22,26 @@ data class UiState(
     val webAccount: String = "", val needsLogin: Boolean = false, val showWebLogin: Boolean = false, val demo: Boolean = false
 )
 
-data class UpdateUi(val checking: Boolean = false, val lastSuccess: Long = 0, val message: String? = null, val offer: AppRelease? = null)
+typealias UpdateUi = AppUpdateState
 
-class HelperViewModel(private val repository: TimetableRepository, campusRepository: CampusRepository? = null, private val updates: AppUpdateRepository? = null, private val syncSystems: suspend () -> Unit = {}) : ViewModel() {
-    private val mutableUpdate = MutableStateFlow(UpdateUi())
-    val updateState = mutableUpdate.asStateFlow()
+class HelperViewModel(private val repository: TimetableRepository, campusRepository: CampusRepository? = null, private val updates: AppUpdateRepository? = null, private val updateSchedule: suspend () -> Unit = {}, private val syncSystems: suspend () -> Unit = {}) : ViewModel() {
+    val updateState = updates?.state ?: MutableStateFlow(UpdateUi()).asStateFlow()
     private var updateJob: Job? = null
-    fun dismissUpdate() { mutableUpdate.update { it.copy(offer = null) } }
-    fun updateLinkFailed() { mutableUpdate.update { it.copy(message = "没有可打开 GitHub 的浏览器") } }
+    init { viewModelScope.launch { updates?.initialize() } }
+    fun dismissUpdate() { updates?.dismissOffer() }
     fun checkUpdates(manual: Boolean = false) {
         val updater = updates ?: return
         if (updateJob?.isActive == true) return
-        updateJob = viewModelScope.launch {
-            mutableUpdate.update { it.copy(checking = true, message = null) }
-            try {
-                val cached = updater.cached()
-                mutableUpdate.update { it.copy(lastSuccess = cached.lastSuccess) }
-                val result = updater.check(manual)
-                val release = result.cache.release?.takeIf { isNewerRelease(it.version, BuildConfig.VERSION_NAME) }
-                mutableUpdate.update { it.copy(lastSuccess = result.cache.lastSuccess,
-                    offer = if (result.checked) release else it.offer,
-                    message = if (manual && release == null) "当前已是最新版本" else null) }
-            } catch (e: CancellationException) { throw e }
-            catch (e: Exception) {
-                if (manual) mutableUpdate.update { it.copy(message = if (e is UpdateCheckException && e.retryAt > System.currentTimeMillis()) {
-                    val time = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.CHINA).format(java.util.Date(e.retryAt))
-                    "暂时无法检查更新，请于 $time 后重试"
-                } else "检查更新失败，请检查网络后重试") }
-            } finally { mutableUpdate.update { it.copy(checking = false) } }
-        }
+        updateJob = viewModelScope.launch { updater.check(manual) }
+    }
+    private fun updateSettings(change: (UpdateSettings) -> UpdateSettings) {
+        viewModelScope.launch { updates?.configure(change) }
+    }
+    fun updateChannel(channel: UpdateChannel) = updateSettings { it.copy(channel = channel) }
+    fun updateServer(server: UpdateServer) = updateSettings { it.copy(server = server) }
+    fun updateRepositoryUrl(url: String) = updateSettings { it.copy(repositoryUrl = url) }
+    fun automaticUpdates(enabled: Boolean) {
+        viewModelScope.launch { updates?.configure { it.copy(automatic = enabled) }; updateSchedule() }
     }
     private val mutable = MutableStateFlow(UiState())
     val state = mutable.asStateFlow()

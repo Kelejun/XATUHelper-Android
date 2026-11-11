@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.xatune.app.data.UpdateChannel
+import com.xatune.app.data.UpdateServer
 import com.xatune.app.BuildConfig
 import com.xatune.app.model.*
 import java.time.LocalDate
@@ -226,7 +228,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun SettingsScreen(state: UiState, onBack: () -> Unit, onCalibrate: () -> Unit, onRelogin: () -> Unit, onLogout: () -> Unit, onReminders: () -> Unit = {}, onWidgets: () -> Unit = {}, onWeekend: (Boolean) -> Unit = {}, onDiagnostics: (Boolean) -> Unit = {}, campus: CampusState = CampusState(), onAutoElectric: (Boolean) -> Unit = {}, update: UpdateUi = UpdateUi(), onCheckUpdates: () -> Unit = {}, onCheckinLocation: () -> Unit = {}) {
+@Composable fun SettingsScreen(state: UiState, onBack: () -> Unit, onCalibrate: () -> Unit, onRelogin: () -> Unit, onLogout: () -> Unit, onReminders: () -> Unit = {}, onWidgets: () -> Unit = {}, onWeekend: (Boolean) -> Unit = {}, onDiagnostics: (Boolean) -> Unit = {}, campus: CampusState = CampusState(), onAutoElectric: (Boolean) -> Unit = {}, update: UpdateUi = UpdateUi(), onCheckUpdates: () -> Unit = {}, onCheckinLocation: () -> Unit = {}, onUpdateChannel: (UpdateChannel) -> Unit = {}, onUpdateServer: (UpdateServer) -> Unit = {}, onUpdateRepository: (String) -> Unit = {}, onAutomaticUpdates: (Boolean) -> Unit = {}) {
     var confirmLogout by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -287,13 +289,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
                     })
                     Text("西安工业大学校园助手 · 原生 Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    FilledTonalButton(onClick = onCheckUpdates, enabled = !update.checking, modifier = Modifier.fillMaxWidth().testTag("checkUpdates")) {
-                        if (update.checking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.SystemUpdate, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp)); Text(if (update.checking) "正在检查更新…" else "检查更新")
-                    }
-                    val checked = if (update.lastSuccess > 0) java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.CHINA).format(java.util.Date(update.lastSuccess)) else "尚未成功检查"
-                    Text("上次成功检查：$checked", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("updateLastSuccess"))
-                    update.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("updateStatus")) }
+                    UpdateSettingsPanel(update, onUpdateChannel, onUpdateServer, onUpdateRepository, onAutomaticUpdates, onCheckUpdates)
                 }
             } }
             item { ServiceRow("GitHub 仓库", "Kelejun/XATUHelper-Android", Icons.Default.Code, Modifier.testTag("githubRepository")) { uriHandler.openUri("https://github.com/Kelejun/XATUHelper-Android") } }

@@ -18,7 +18,7 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.xatune.app.data.AppRelease
+import com.xatune.app.data.*
 import com.xatune.app.ui.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -36,7 +36,7 @@ class AppUpdateUiTest {
             CompositionLocalProvider(LocalUriHandler provides object : UriHandler {
                 override fun openUri(uri: String) { opened = uri }
             }) {
-                HelperTheme { UpdateNotification(UpdateUi(offer = offer), { offer = null }, {}) }
+                HelperTheme { UpdateNotification(UpdateUi(offer = offer), { offer = null }) }
             }
         }
         compose.onNodeWithText("发现新版本 v1.2.0").assertIsDisplayed()
@@ -54,7 +54,7 @@ class AppUpdateUiTest {
         var dark by mutableStateOf(false)
         compose.setContent {
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
-                UpdateNotification(UpdateUi(offer = AppRelease("v1.2.0", "更新说明", "https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0")), {}, {})
+                UpdateNotification(UpdateUi(offer = AppRelease("v1.2.0", "更新说明", "https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0")), {})
             }
         }
         for (night in listOf(false, true)) {
@@ -109,14 +109,37 @@ class AppUpdateUiTest {
         compose.onNodeWithTag("gradeSearch").assertIsDisplayed()
     }
 
-    @Test fun settingsShowsLastSuccessAndRunsManualCheck() {
+    @Test fun settingsShowsSharedLogsAndRunsManualCheck() {
         var checks = 0
+        val logs = listOf(
+            UpdateLog(1_000_000, true, UpdateChannel.RELEASE, false, "GitHub HTTP 503"),
+            UpdateLog(900_000, false, UpdateChannel.PRERELEASE, true, "当前已是最新版本")
+        )
         compose.setContent { HelperTheme {
-            SettingsScreen(UiState(), {}, {}, {}, {}, update = UpdateUi(lastSuccess = 1_000_000), onCheckUpdates = { checks++ })
+            SettingsScreen(UiState(), {}, {}, {}, {}, update = UpdateUi(logs = logs), onCheckUpdates = { checks++ })
         } }
         compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("checkUpdates"))
         compose.onNodeWithTag("checkUpdates").performClick()
         compose.runOnIdle { assertEquals(1, checks) }
-        compose.onNodeWithTag("updateLastSuccess").performScrollTo().assertTextContains("上次成功检查：", substring = true)
+        compose.onNodeWithTag("updateLog0").performScrollTo().assertTextContains("自动检测更新失败", substring = true)
+        compose.onNodeWithTag("updateLog1").performScrollTo().assertTextContains("手动检测更新成功", substring = true)
+    }
+
+    @Test fun updateOptionsSelectChannelServerAndAutomaticChecks() {
+        var settings by mutableStateOf(UpdateSettings(channel = UpdateChannel.PRERELEASE))
+        compose.setContent { HelperTheme {
+            UpdateSettingsPanel(UpdateUi(settings = settings),
+                { settings = settings.copy(channel = it) },
+                { settings = settings.copy(server = it) },
+                { settings = settings.copy(repositoryUrl = it) },
+                { settings = settings.copy(automatic = it) }, {})
+        } }
+        compose.onNodeWithTag("updateChannel-prerelease").assertIsSelected()
+        compose.onNodeWithTag("updateChannel-release").performClick().assertIsSelected()
+        compose.onNodeWithText("其他", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("updateRepositoryUrl").performTextInput("https://mirror.example/repo")
+        compose.runOnIdle { assertEquals("https://mirror.example/repo", settings.repositoryUrl) }
+        compose.onNodeWithTag("automaticUpdates").performClick()
+        compose.runOnIdle { assertTrue(settings.automatic) }
     }
 }

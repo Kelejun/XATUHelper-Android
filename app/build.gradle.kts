@@ -12,6 +12,9 @@ val gitCommit = providers.exec {
     isIgnoreExitValue = true
 }.standardOutput.asText.map { it.trim().ifEmpty { "unknown" } }.get()
 
+val pushChannel = providers.gradleProperty("pushChannel").orElse("release").get()
+require(pushChannel in setOf("release", "prerelease")) { "pushChannel must be release or prerelease" }
+
 android {
     namespace = "com.xatune.app"
     compileSdk = 36
@@ -20,8 +23,9 @@ android {
         applicationId = "com.xatune.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 33
+        versionCode = 35
         versionName = "1.1.9"
+        buildConfigField("String", "PUSH_CHANNEL", "\"$pushChannel\"")
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
         buildConfigField("String", "ANNOUNCEMENTS_BASE_URL", "\"${providers.gradleProperty("announcementsBaseUrl").orElse("").get()}\"")
         buildConfigField("boolean", "DEMO_ENABLED", "false")

@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         // of its container, especially on cached layers during page transitions.
         if (android.os.Build.VERSION.SDK_INT >= 29) window.decorView.isForceDarkAllowed = false
         val model = ViewModelProvider(this, object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = HelperViewModel((application as HelperApplication).repository, (application as HelperApplication).campusRepository, updates = (application as HelperApplication).updates) { com.xatune.app.platform.SystemCoordinator.synchronize(application) } as T
+            @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = HelperViewModel((application as HelperApplication).repository, (application as HelperApplication).campusRepository, updates = (application as HelperApplication).updates, updateSchedule = { com.xatune.app.platform.UpdateScheduler.synchronize(application) }) { com.xatune.app.platform.SystemCoordinator.synchronize(application) } as T
         })[HelperViewModel::class.java]
         helperModel = model
         model.openDestination(intent.getStringExtra("open_page")); intent.removeExtra("open_page")
