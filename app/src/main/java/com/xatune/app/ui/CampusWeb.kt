@@ -20,7 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.xatune.app.data.SchoolUrls
+import com.xatune.app.platform.CampusWebNavigation
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlinx.coroutines.delay
 
@@ -125,11 +125,17 @@ object CampusLinks {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         if (documents?.redirect(view, request) == true) return true
                         val target = request.url.toString()
-                        diagnostics?.navigation(request, SchoolUrls.trusted(target))
-                        if (SchoolUrls.trusted(target)) return false
-                        if (request.hasGesture() && request.url.scheme in listOf("https", "http", "tel", "mailto", "alipays", "weixin")) {
-                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, request.url)) }.onFailure { error = "没有可打开此链接的应用" }
-                        } else error = "已停止打开不受支持的跳转地址"
+                        val destination = CampusWebNavigation.destination(page, target, request.hasGesture())
+                        diagnostics?.navigation(request, destination != CampusWebNavigation.Destination.BLOCKED)
+                        when (destination) {
+                            CampusWebNavigation.Destination.WEB -> return false
+                            CampusWebNavigation.Destination.APP -> {
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, request.url).addCategory(Intent.CATEGORY_BROWSABLE))
+                                }.onFailure { error = "没有可打开此链接的应用，请确认已安装对应应用后重试" }
+                            }
+                            CampusWebNavigation.Destination.BLOCKED -> error = "已停止打开不受支持的跳转地址"
+                        }
                         loading = false
                         return true
                     }
