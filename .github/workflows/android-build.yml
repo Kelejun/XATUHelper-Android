@@ -2,211 +2,44 @@ name: CI 编译
 
 on:
   workflow_dispatch:
+    inputs:
+      channel:
+        description: 构建并发布的渠道
+        type: choice
+        required: true
+        default: prerelease
+        options:
+          - prerelease
+          - release
   schedule:
-    - cron: "0 22 * * *" # 每天凌晨 06:00 (UTC时间22点) 构建一次
+    - cron: "0 22 * * *" # 北京时间每天 06:00，仅更新预发布渠道
 
 permissions:
   contents: write
 
+# 同一时间只允许一个任务发布，避免预发布附件被交错替换。
 concurrency:
-  group: xatune-prerelease
+  group: xatune-release-publishing
   cancel-in-progress: false
 
 jobs:
-  build:
-    if: github.ref == 'refs/heads/main'
+  prerelease:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.channel == 'prerelease'))
     name: Android 预发布构建
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    uses: ./.github/workflows/android-package.yml
+    with:
+      channel: prerelease
+    secrets: inherit
 
-    steps:
-      - name: 检出源代码
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: 配置 JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: 配置 Gradle
-        uses: gradle/actions/setup-gradle@v5
-
-      - name: 安装 Android SDK 组件
-        run: >-
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          "platforms;android-36" "build-tools;36.0.0"
-
-      # Release has no signingConfig. Other variants and the packaging
-      # script use development signing and must not be built here.
-      - name: 构建未签名 APK
-        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
-
-      - name: 签名 APK
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          KEYSTORE="$RUNNER_TEMP/xatune-signing.jks"
-          trap 'rm -f "$KEYSTORE"' EXIT
-
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
-            | base64 --decode > "$KEYSTORE"
-
-          chmod 600 "$KEYSTORE"
-
-          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          APK_DIR="app/build/outputs/apk/release"
-
-          shopt -s nullglob
-          apks=("$APK_DIR"/*-unsigned.apk)
-
-          if [[ ${#apks[@]} -ne 4 ]]; then
-            echo "Expected 4 unsigned APKs, found ${#apks[@]}"
-            exit 1
-          fi
-
-          for apk in "${apks[@]}"; do
-            signed="${apk%-unsigned.apk}-signed.apk"
-
-            "$APKSIGNER" sign \
-              --ks "$KEYSTORE" \
-              --ks-key-alias "$ANDROID_KEY_ALIAS" \
-              --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
-              --key-pass env:ANDROID_KEY_PASSWORD \
-              --out "$signed" \
-              "$apk"
-
-            "$APKSIGNER" verify --verbose --print-certs "$signed"
-          done
-
-      - name: 重命名 APK
-        id: apks
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          apk_dir=app/build/outputs/apk/release
-          version_name=$(jq -er '.elements[0].versionName' "$apk_dir/output-metadata.json")
-          version_code=$(jq -er '.elements[0].versionCode' "$apk_dir/output-metadata.json")
-          commit=$(git rev-parse HEAD)
-
-          prefix="XATune-v${version_name}.r${version_code}.${commit:0:7}"
-
-          mkdir -p artifacts release-assets
-
-          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-            source_apk="$apk_dir/app-${abi}-release-signed.apk"
-
-            if [[ ! -f "$source_apk" ]]; then
-              echo "Missing signed APK: $source_apk"
-              exit 1
-            fi
-
-            # Actions Artifact
-            cp "$source_apk" "artifacts/${prefix}-${abi}.apk"
-
-            # GitHub Release
-            cp "$source_apk" "release-assets/${prefix}-${abi}.apk"
-          done
-
-          (
-            cd release-assets
-            sha256sum "${prefix}-"*.apk > SHA256SUMS
-          )
-
-          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
-
-      # Each upload contains exactly one APK, with no surrounding ZIP archive.
-      - name: 上传 arm64-v8a APK
-        uses: actions/upload-artifact@v7
-        with:
-          path: artifacts/${{ steps.apks.outputs.prefix }}-arm64-v8a.apk
-          archive: false
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: 上传 armeabi-v7a APK
-        uses: actions/upload-artifact@v7
-        with:
-          path: artifacts/${{ steps.apks.outputs.prefix }}-armeabi-v7a.apk
-          archive: false
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: 上传 x86 APK
-        uses: actions/upload-artifact@v7
-        with:
-          path: artifacts/${{ steps.apks.outputs.prefix }}-x86.apk
-          archive: false
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: 上传 x86_64 APK
-        uses: actions/upload-artifact@v7
-        with:
-          path: artifacts/${{ steps.apks.outputs.prefix }}-x86_64.apk
-          archive: false
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: 发布 apk 至 prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          tag=Prerelease
-
-          # 1. 将固定 Tag 移动到本次构建的 Commit
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
-            gh api --method PATCH \
-              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
-              -f sha="${GITHUB_SHA}" \
-              -F force=true >/dev/null
-          else
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/${tag}" \
-              -f sha="${GITHUB_SHA}" >/dev/null
-          fi
-
-          # 2. 创建或更新固定 Release
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" \
-              --title "XATune Prerelease" \
-              --notes "Automatically updated by GitHub Actions. Commit: ${GITHUB_SHA}" \
-              --prerelease
-          else
-            gh release create "$tag" \
-              --verify-tag \
-              --title "XATune Prerelease" \
-              --notes "Automatically updated by GitHub Actions." \
-              --prerelease
-          fi
-
-          # 先上传本次构建的文件
-          gh release upload "$tag" \
-            release-assets/* \
-            --clobber
-
-          # 上传成功后，清理不属于本次构建的旧附件
-          while IFS= read -r asset; do
-            [[ -z "$asset" ]] && continue
-
-            if [[ ! -f "release-assets/$asset" ]]; then
-              gh release delete-asset "$tag" "$asset" --yes
-            fi
-          done < <(
-            gh release view "$tag" \
-              --json assets \
-              --jq '.assets[].name'
-          )
+  release:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.channel == 'release'
+    name: Android 正式版构建（仅手动）
+    uses: ./.github/workflows/android-package.yml
+    with:
+      channel: release
+    secrets: inherit

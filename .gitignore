@@ -10,5 +10,6 @@ captures/
 
 .tools/
 artifacts/
+release-assets/
 
 dist/

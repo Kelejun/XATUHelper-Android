@@ -1,0 +1,221 @@
+name: Android 签名与发布
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        required: true
+        type: string
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: true
+      ANDROID_KEYSTORE_PASSWORD:
+        required: true
+      ANDROID_KEY_ALIAS:
+        required: true
+      ANDROID_KEY_PASSWORD:
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    # 正式版在可复用工作流中也校验触发方式。
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (inputs.channel == 'prerelease' ||
+      (inputs.channel == 'release' && github.event_name == 'workflow_dispatch'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: 检出源代码
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: 验证渠道清单生成逻辑
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-prepare-release-assets.py
+
+      - name: 安装 Android SDK 组件
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "platforms;android-36" "build-tools;36.0.0"
+
+      # 两个渠道都构建未签名的 release 变体，再使用同一套 Secrets 签名。
+      - name: 单元测试、Lint 与构建未签名 APK
+        run: ./gradlew --no-daemon --stacktrace :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
+
+      - name: 签名 APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          umask 077
+          KEYSTORE="$RUNNER_TEMP/xatune-signing.jks"
+          trap 'rm -f "$KEYSTORE"' EXIT
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode > "$KEYSTORE"
+
+          chmod 600 "$KEYSTORE"
+
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          APK_DIR="app/build/outputs/apk/release"
+
+          shopt -s nullglob
+          apks=("$APK_DIR"/*-unsigned.apk)
+
+          if [[ ${#apks[@]} -ne 4 ]]; then
+            echo "Expected 4 unsigned APKs, found ${#apks[@]}"
+            exit 1
+          fi
+
+          for apk in "${apks[@]}"; do
+            signed="${apk%-unsigned.apk}-signed.apk"
+
+            "$APKSIGNER" sign \
+              --ks "$KEYSTORE" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+              --key-pass env:ANDROID_KEY_PASSWORD \
+              --out "$signed" \
+              "$apk"
+
+            "$APKSIGNER" verify --verbose --print-certs "$signed"
+          done
+
+      - name: 生成 APK 附件、渠道清单和发布说明
+        id: apks
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: >-
+          python3 scripts/prepare-release-assets.py
+          --apk-dir app/build/outputs/apk/release
+          --output-dir release-assets
+          --channel "$CHANNEL"
+          --repository "$GITHUB_REPOSITORY"
+          --commit "$GITHUB_SHA"
+          --github-output "$GITHUB_OUTPUT"
+
+      # 每个构建产物仍为独立 APK；清单单独上传。
+      - name: 上传 arm64-v8a APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: release-assets/${{ steps.apks.outputs.prefix }}-arm64-v8a.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 上传 armeabi-v7a APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: release-assets/${{ steps.apks.outputs.prefix }}-armeabi-v7a.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 上传 x86 APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: release-assets/${{ steps.apks.outputs.prefix }}-x86.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 上传 x86_64 APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: release-assets/${{ steps.apks.outputs.prefix }}-x86_64.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 上传渠道清单
+        uses: actions/upload-artifact@v7
+        with:
+          path: release-assets/update.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 发布预发布渠道
+        if: inputs.channel == 'prerelease'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.apks.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 固定预发布 Tag 保留现有滚动更新行为。
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+              -f sha="${GITHUB_SHA}" -F force=true >/dev/null
+          else
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" -f sha="${GITHUB_SHA}" >/dev/null
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "XATune Prerelease" --notes-file release-assets/release-notes.md \
+              --prerelease --latest=false
+          else
+            gh release create "$TAG" --verify-tag \
+              --title "XATune Prerelease" --notes-file release-assets/release-notes.md \
+              --prerelease --latest=false
+          fi
+
+          # APK 上传成功后才能替换清单，最后清理旧附件。
+          gh release upload "$TAG" release-assets/*.apk release-assets/SHA256SUMS --clobber
+          gh release upload "$TAG" release-assets/update.json --clobber
+
+          gh release view "$TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/old-assets.txt"
+          while IFS= read -r asset; do
+            [[ -z "$asset" ]] && continue
+            if [[ ! -f "release-assets/$asset" ]]; then
+              gh release delete-asset "$TAG" "$asset" --yes
+            fi
+          done < "$RUNNER_TEMP/old-assets.txt"
+
+      - name: 发布正式版渠道
+        if: inputs.channel == 'release' && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.apks.outputs.tag }}
+          VERSION_NAME: ${{ steps.apks.outputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 同 Tag 重跑时复用现有 Release，允许新提交覆盖旧构建附件。
+          # 不移动已有 Tag；本次构建的提交记录在清单及发布说明中。
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --draft \
+              --title "XATune v${VERSION_NAME}" --notes-file release-assets/release-notes.md
+          fi
+
+          # 先覆盖四个 APK 和校验和，成功后再覆盖渠道清单。
+          gh release upload "$TAG" release-assets/*.apk release-assets/SHA256SUMS --clobber
+          gh release upload "$TAG" release-assets/update.json --clobber
+          # 附件齐全后再公开，并让 /releases/latest/download/update.json 指向此版本。
+          gh release edit "$TAG" --draft=false --latest \
+            --title "XATune v${VERSION_NAME}" --notes-file release-assets/release-notes.md
