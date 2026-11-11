@@ -7,7 +7,7 @@ import okhttp3.Response
 internal object CasHttps : Interceptor {
     fun upgrade(url: String): String {
         val target = url.toHttpUrlOrNull() ?: return url
-        if (target.scheme != "http" || target.host != "authserver.xatu.edu.cn" || target.port != 80) return url
+        if (target.scheme != "http" || target.host !in setOf("authserver.xatu.edu.cn", "jfpay.xatu.edu.cn") || target.port != 80) return url
         return target.newBuilder().scheme("https").port(443).build().toString()
     }
 

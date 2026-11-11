@@ -35,4 +35,13 @@ class CasHttpsTest {
             "https://authserver.xatu.edu.cn/authserver/login"
         )) assertEquals(url, url, CasHttps.upgrade(url))
     }
+
+    @Test fun campusNetworkChargeUsesHttpsWithoutChangingTheCallback() {
+        assertEquals("https://jfpay.xatu.edu.cn/casLoginNetCharge/?ticket=ST-fixture",
+            CasHttps.upgrade("http://jfpay.xatu.edu.cn/casLoginNetCharge/?ticket=ST-fixture"))
+        for (url in listOf("http://jfpay.xatu.edu.cn.evil.example/casLoginNetCharge/",
+            "http://sub.jfpay.xatu.edu.cn/casLoginNetCharge/", "http://jfpay.xatu.edu.cn:8080/casLoginNetCharge/")) {
+            assertEquals(url, CasHttps.upgrade(url))
+        }
+    }
 }

@@ -202,7 +202,8 @@ class CheckinLocationUiTest {
         }
         assertEquals("Space around the cap remains transparent", 0, android.graphics.Color.alpha(target.getPixel(90, 200)))
         target.recycle()
-        val normal = context.getDrawable(R.drawable.ic_launcher)!!
+        val normal = context.packageManager.getApplicationIcon(context.packageName)
+        assertEquals(R.mipmap.ic_launcher, context.applicationInfo.icon)
         val background = (normal as android.graphics.drawable.AdaptiveIconDrawable).background as android.graphics.drawable.ColorDrawable
         assertEquals("Launcher retains its original background palette", context.getColor(R.color.ic_launcher_background), background.color)
         val preview = Bitmap.createBitmap(432, 432, Bitmap.Config.ARGB_8888)

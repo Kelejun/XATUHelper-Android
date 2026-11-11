@@ -26,6 +26,14 @@ class CampusPaymentNavigationTest {
         else -> null
     }
 
+    @Test fun legacyPaymentHttpIsLimitedToTheExactSchoolHost() {
+        val policy = android.security.NetworkSecurityPolicy.getInstance()
+        assertTrue(policy.isCleartextTrafficPermitted("jfpay.xatu.edu.cn"))
+        assertFalse(policy.isCleartextTrafficPermitted("sub.jfpay.xatu.edu.cn"))
+        assertFalse(policy.isCleartextTrafficPermitted("jfpay.xatu.edu.cn.evil.example"))
+        assertFalse(policy.isCleartextTrafficPermitted("example.com"))
+    }
+
     @Test fun renewalFollowsCrossHostRedirectAndPreservesPostAndCookies() {
         check(BuildConfig.APPLICATION_ID.endsWith(".qa"))
         val server = MockWebServer()

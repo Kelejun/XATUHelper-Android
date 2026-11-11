@@ -4,5 +4,6 @@
         <domain includeSubdomains="false">jwgl2018.xatu.edu.cn</domain>
         <!-- The self-service platform returns HTTP CAS callbacks and API URLs. -->
         <domain includeSubdomains="false">self.xatu.edu.cn</domain>
+        <domain includeSubdomains="false">jfpay.xatu.edu.cn</domain>
     </domain-config>
 </network-security-config>
