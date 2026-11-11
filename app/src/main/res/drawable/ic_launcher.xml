@@ -1,4 +1,4 @@
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item><shape android:shape="rectangle"><corners android:radius="20dp" /><solid android:color="@color/ic_launcher_background" /></shape></item>
-    <item android:drawable="@drawable/ic_launcher_cap" />
-</layer-list>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

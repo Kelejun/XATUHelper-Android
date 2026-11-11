@@ -14,3 +14,14 @@ release-assets/
 
 dist/
 local/
+
+.DS_Store
+*.hprof
+.externalNativeBuild/
+.cxx/
+__pycache__/
+*.py[cod]
+
+VALIDATION*.md
+PARITY-IOS.md
+RELEASE-*.md
