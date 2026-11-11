@@ -83,7 +83,8 @@ def prepare(apk_dir, output_dir, channel, repository, commit):
         "notes": notes,
         "assets": assets,
     }
-    (output_dir / "update.json").write_text(
+    manifest_name = f"{channel}.update.json"
+    (output_dir / manifest_name).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (output_dir / "SHA256SUMS").write_text(
         "".join(f"{asset['sha256']}  {asset['name']}\n" for asset in assets.values()),
@@ -93,7 +94,8 @@ def prepare(apk_dir, output_dir, channel, repository, commit):
         f"{notes}\n\nCommit: `{commit}`\n\n"
         + "\n".join(f"- `{abi}`：`{asset['name']}`" for abi, asset in assets.items()) + "\n",
         encoding="utf-8")
-    return {"prefix": prefix, "tag": tag, "version_name": version_name}
+    return {"prefix": prefix, "tag": tag, "version_name": version_name,
+            "manifest_name": manifest_name}
 
 
 def main():

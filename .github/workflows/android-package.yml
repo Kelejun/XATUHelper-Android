@@ -149,7 +149,7 @@ jobs:
       - name: 上传渠道清单
         uses: actions/upload-artifact@v7
         with:
-          path: release-assets/update.json
+          path: release-assets/${{ steps.apks.outputs.manifest_name }}
           archive: false
           if-no-files-found: error
           retention-days: 14
@@ -159,6 +159,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.apks.outputs.tag }}
+          MANIFEST_NAME: ${{ steps.apks.outputs.manifest_name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -186,7 +187,7 @@ jobs:
 
           # APK 上传成功后才能替换清单，最后清理旧附件。
           gh release upload "$TAG" release-assets/*.apk release-assets/SHA256SUMS --clobber
-          gh release upload "$TAG" release-assets/update.json --clobber
+          gh release upload "$TAG" "release-assets/$MANIFEST_NAME" --clobber
 
           gh release view "$TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/old-assets.txt"
           while IFS= read -r asset; do
@@ -201,6 +202,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.apks.outputs.tag }}
+          MANIFEST_NAME: ${{ steps.apks.outputs.manifest_name }}
           VERSION_NAME: ${{ steps.apks.outputs.version_name }}
         shell: bash
         run: |
@@ -215,7 +217,7 @@ jobs:
 
           # 先覆盖四个 APK 和校验和，成功后再覆盖渠道清单。
           gh release upload "$TAG" release-assets/*.apk release-assets/SHA256SUMS --clobber
-          gh release upload "$TAG" release-assets/update.json --clobber
-          # 附件齐全后再公开，并让 /releases/latest/download/update.json 指向此版本。
+          gh release upload "$TAG" "release-assets/$MANIFEST_NAME" --clobber
+          # 附件齐全后再公开，并让 /releases/latest/download/release.update.json 指向此版本。
           gh release edit "$TAG" --draft=false --latest \
             --title "XATune v${VERSION_NAME}" --notes-file release-assets/release-notes.md

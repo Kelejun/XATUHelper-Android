@@ -43,7 +43,9 @@ class ReleaseAssetsTest(unittest.TestCase):
     def test_release_manifest_matches_all_packaged_files(self):
         outputs = self.prepare()
         self.assertEqual(outputs["tag"], "v1.1.9")
-        manifest = json.loads((self.output / "update.json").read_text())
+        self.assertEqual(outputs["manifest_name"], "release.update.json")
+        self.assertEqual({p.name for p in self.output.glob("*.json")}, {"release.update.json"})
+        manifest = json.loads((self.output / "release.update.json").read_text())
         self.assertEqual(manifest["channel"], "stable")
         self.assertEqual(manifest["versionCode"], 32)
         self.assertEqual(manifest["versionName"], "1.1.9")
@@ -62,8 +64,10 @@ class ReleaseAssetsTest(unittest.TestCase):
     def test_prerelease_keeps_ci_names_and_rolling_tag(self):
         outputs = self.prepare("prerelease")
         self.assertEqual(outputs["tag"], "Prerelease")
+        self.assertEqual(outputs["manifest_name"], "prerelease.update.json")
+        self.assertEqual({p.name for p in self.output.glob("*.json")}, {"prerelease.update.json"})
         self.assertEqual(outputs["prefix"], "XATune-v1.1.9.r32.abcdef0")
-        manifest = json.loads((self.output / "update.json").read_text())
+        manifest = json.loads((self.output / "prerelease.update.json").read_text())
         self.assertEqual(manifest["channel"], "prerelease")
         self.assertTrue(manifest["releaseUrl"].endswith("/tag/Prerelease"))
 
