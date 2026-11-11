@@ -20,8 +20,8 @@ android {
         applicationId = "com.xatune.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 31
-        versionName = "1.1.7"
+        versionCode = 33
+        versionName = "1.1.9"
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
         buildConfigField("String", "ANNOUNCEMENTS_BASE_URL", "\"${providers.gradleProperty("announcementsBaseUrl").orElse("").get()}\"")
         buildConfigField("boolean", "DEMO_ENABLED", "false")
