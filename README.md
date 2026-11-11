@@ -4,6 +4,8 @@
 
 仙宫小助手 Android 版，从教务官网自动拉取课程表、考试安排、学分等信息。同时提供查询宿舍电费、签到与请销假等小功能。
 
+> 查看 iOS 版本仓库请前往 [XATUHelper](https://github.com/Kelejun/XATUHelper)
+
 ## 下载
 
 <a href="https://github.com/Kelejun/XATUHelper-Android/releases/latest">
@@ -16,8 +18,6 @@
 </a>
 
 ## 编译
-
-> 查看 iOS 版本仓库请前往 [XATUHelper](https://github.com/Kelejun/XATUHelper)
 
 需要 JDK 17 、Android SDK 36。
 
