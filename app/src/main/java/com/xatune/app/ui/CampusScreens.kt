@@ -1,7 +1,6 @@
 package com.xatune.app.ui
 
 import android.Manifest
-import android.app.AlarmManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build

@@ -56,14 +56,11 @@ import java.time.format.DateTimeFormatter
     ScreenTransition(screen) { destination -> when (destination) {
         "starting" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         "webLogin" -> WebLogin(state.webAccount, model::closeWeb, model::finishWeb, model::webError)
-        "login" -> LoginScreen(state, model::login, model::openWeb, if (BuildConfig.DEMO_ENABLED) model::demo else null, if (state.table != null) ({ relogin = false }) else null)
-        else -> MainShell(state, model, { relogin = true })
+        "login" -> LoginScreen(state, model::login, model::openWeb, if (BuildConfig.DEMO_ENABLED) model::demo else null, if (state.table != null) ({ relogin = false }) else null, announcements?.takeIf { state.notice == null && update.offer == null })
+        else -> MainShell(state, model, { relogin = true }, announcements)
     }
     }
     UpdateNotification(update, model::dismissUpdate)
-    if (!state.starting && !state.showWebLogin && state.notice == null && update.offer == null) {
-        announcements?.let { AnnouncementNotification(it) }
-    }
 }
 
 @Composable internal fun UpdateNotification(update: UpdateUi, onDismiss: () -> Unit) {
@@ -86,9 +83,10 @@ import java.time.format.DateTimeFormatter
         dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } })
 }
 
-@Composable internal fun LoginScreen(state: UiState, onLogin: (String, String) -> Unit, onWeb: (String) -> Unit, onDemo: (() -> Unit)?, onBack: (() -> Unit)?) {
+@Composable internal fun LoginScreen(state: UiState, onLogin: (String, String) -> Unit, onWeb: (String) -> Unit, onDemo: (() -> Unit)?, onBack: (() -> Unit)?, announcements: AnnouncementViewModel? = null) {
     var privacy by remember { mutableStateOf(false) }
     if (privacy) PrivacyPolicyDialog { privacy = false }
+    if (!privacy && !state.busy) announcements?.let { AnnouncementNotification(it) }
     var account by rememberSaveable { mutableStateOf(state.account.takeUnless { it == "__demo__" }.orEmpty()) }
     var password by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }
@@ -97,7 +95,7 @@ import java.time.format.DateTimeFormatter
         Column(Modifier.safeDrawingPadding().imePadding().fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Spacer(Modifier.height(8.dp))
             Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(80.dp)) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.School, null, Modifier.size(44.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+                Box(contentAlignment = Alignment.Center) { Icon(androidx.compose.ui.res.painterResource(com.xatune.app.R.drawable.ic_xatune_mark), null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) }
             }
             Text("XATune", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("校园生活，一处掌握", style = MaterialTheme.typography.titleMedium)
@@ -122,7 +120,8 @@ import java.time.format.DateTimeFormatter
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun MainShell(state: UiState, model: HelperViewModel, onRelogin: () -> Unit) {
+@Composable private fun MainShell(state: UiState, model: HelperViewModel, onRelogin: () -> Unit, announcements: AnnouncementViewModel?) {
+    var selectedAnnouncement by remember { mutableStateOf<com.xatune.app.data.ReceivedAnnouncement?>(null) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var page by rememberSaveable { mutableStateOf<String?>(null) }
     var academicScope by rememberSaveable { mutableStateOf<String?>(null) }
@@ -152,7 +151,8 @@ import java.time.format.DateTimeFormatter
     val direction = remember(page) { if (page == null || parentPage(previousPage) == page) -1 else 1 }
     SideEffect { previousPage = page }
     ScreenTransition(page, modifier = backModifier, direction = direction) { destination -> when (destination) {
-        "settings" -> SettingsScreen(state, { page = null }, { showCalibration = true }, onRelogin, model::logout, { page = "notifications" }, { page = "widgets" }, model::showWeekend, model::showDiagnostics, campusState, { model.campus?.autoElectric(it) }, update, { model.checkUpdates(manual = true) }, onCheckinLocation = { page = "checkinLocation" }, onUpdateChannel = model::updateChannel, onUpdateServer = model::updateServer, onUpdateRepository = model::updateRepositoryUrl, onAutomaticUpdates = model::automaticUpdates)
+        "settings" -> SettingsScreen(state, { page = null }, { showCalibration = true }, onRelogin, model::logout, { page = "notifications" }, { page = "widgets" }, model::showWeekend, model::showDiagnostics, campusState, { model.campus?.autoElectric(it) }, update, { model.checkUpdates(manual = true) }, onCheckinLocation = { page = "checkinLocation" }, onUpdateChannel = model::updateChannel, onUpdateServer = model::updateServer, onUpdateRepository = model::updateRepositoryUrl, onAutomaticUpdates = model::automaticUpdates, announcements = announcements, onOpenAnnouncement = { selectedAnnouncement = it }, onAnnouncementHistory = { page = "announcementHistory" })
+        "announcementHistory" -> announcements?.let { AnnouncementHistoryScreen(it, { page = "settings" }, { selectedAnnouncement = it }) }
         "electricity" -> model.campus?.let { ElectricityScreen(it, { page = null }, { page = "charge" }) }
         "calendar" -> model.campus?.let { CalendarScreen(it, { page = null }) }
         "notifications" -> model.campus?.let { ReminderScreen(it, { page = "settings" }) }
@@ -224,6 +224,13 @@ import java.time.format.DateTimeFormatter
                     reminderPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }) { Text("开启提醒") } },
             dismissButton = { TextButton(onClick = { model.campus?.acknowledgeReminders(offerClasses) }) { Text("先不用") } })
+    }
+    selectedAnnouncement?.let { record ->
+        announcements?.let { center -> AnnouncementDetail(record.announcement, record.receivedAt, center) { center.acknowledge(record); selectedAnnouncement = null } }
+    }
+    if (page == null && course == null && editRequest == null && !history && !showCalibration && selectedAnnouncement == null &&
+        state.notice == null && update.offer == null && (state.demo || campusState.promptedClasses || tab != 1)) {
+        announcements?.let { AnnouncementNotification(it) }
     }
     // Display one banner at a time; academic notices retain their full lifetime after update dismissal.
     if (update.offer == null) state.notice?.let { notice ->

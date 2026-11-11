@@ -6,4 +6,5 @@
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
     </domain-config>
+    <domain-config cleartextTrafficPermitted="true"><domain>47.109.84.89</domain></domain-config>
 </network-security-config>

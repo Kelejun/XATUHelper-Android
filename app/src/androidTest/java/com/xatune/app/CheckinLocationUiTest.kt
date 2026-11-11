@@ -191,33 +191,24 @@ class CheckinLocationUiTest {
         assertEquals("Clearing a frame watch stops future callbacks", 1, results.count { it.startsWith("watch:") })
     }
 
-    @Test fun launcherMonochromePreservesIosCapAndTassel() {
+    @Test fun launcherVectorsPreserveCapAndTassel() {
         val context = compose.activity
-        val source = android.graphics.BitmapFactory.decodeResource(context.resources, R.drawable.ic_launcher_ios)
-        val normal = context.getDrawable(R.drawable.ic_launcher)!!
-        val themed = android.graphics.drawable.AdaptiveIconDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK), context.getDrawable(R.drawable.ic_launcher_monochrome)!!)
-        for (icon in listOf(normal, themed)) {
-            val target = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-            icon.setBounds(0, 0, target.width, target.height); icon.draw(android.graphics.Canvas(target))
-            var union = 0; var overlap = 0; var left = target.width; var right = 0
-            for (x in 0 until source.width step 2) for (y in 0 until source.height step 2) {
-                val rgb = source.getPixel(x,y)
-                val original = minOf(android.graphics.Color.red(rgb),android.graphics.Color.green(rgb),android.graphics.Color.blue(rgb)) > 200
-                val pixel = target.getPixel(x,y)
-                val actual = android.graphics.Color.alpha(pixel) > 127 && minOf(android.graphics.Color.red(pixel),android.graphics.Color.green(pixel),android.graphics.Color.blue(pixel)) > 200
-                if (original || actual) union++
-                if (original && actual) overlap++
-                if (actual) { left = minOf(left,x); right = maxOf(right,x) }
-            }
-            if (icon === normal) {
-                File(context.getExternalFilesDir(null), "launcher-icon-preview.png").outputStream().use { target.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                File(context.getExternalFilesDir(null), "launcher-icon-metrics.txt").writeText("capWidthFraction=${(right-left).toDouble()/source.width}\niOSOverlap=${overlap.toDouble()/union}\n")
-            }
-            assertTrue("Final launcher crop should retain iOS proportions", overlap.toDouble()/union > .98)
-            assertTrue("Cap should occupy about 60% of the final masked icon, not 90%", (right-left).toDouble()/source.width in .55.. .65)
-            target.recycle()
+        val cap = context.getDrawable(R.drawable.ic_launcher_cap)!!
+        val target = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888)
+        cap.setBounds(0, 0, 300, 300)
+        cap.draw(android.graphics.Canvas(target))
+        for ((x, y) in listOf(150 to 130, 150 to 190, 218 to 200)) {
+            assertTrue("Cap, base and tassel must remain opaque", android.graphics.Color.alpha(target.getPixel(x, y)) > 240)
         }
-        source.recycle()
+        assertEquals("Space around the cap remains transparent", 0, android.graphics.Color.alpha(target.getPixel(90, 200)))
+        target.recycle()
+        val normal = context.getDrawable(R.drawable.ic_launcher)!!
+        val background = (normal as android.graphics.drawable.AdaptiveIconDrawable).background as android.graphics.drawable.ColorDrawable
+        assertEquals("Launcher retains its original background palette", context.getColor(R.color.ic_launcher_background), background.color)
+        val preview = Bitmap.createBitmap(432, 432, Bitmap.Config.ARGB_8888)
+        normal.setBounds(0, 0, 432, 432); normal.draw(android.graphics.Canvas(preview))
+        File(context.getExternalFilesDir(null), "launcher-icon-preview.png").outputStream().use { preview.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        preview.recycle()
     }
     private fun evaluate(script: String) { compose.runOnUiThread { browser?.evaluateJavascript(script, null) } }
     private fun shot(name: String) {

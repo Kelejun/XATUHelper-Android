@@ -12,3 +12,7 @@
 -keep class com.xatune.app.data.UpdateLog { *; }
 -keep enum com.xatune.app.data.UpdateChannel { *; }
 -keep enum com.xatune.app.data.UpdateServer { *; }
+
+# Preserve persisted announcement history across optimized updates.
+-keep class com.xatune.app.data.Announcement { *; }
+-keep class com.xatune.app.data.ReceivedAnnouncement { *; }
