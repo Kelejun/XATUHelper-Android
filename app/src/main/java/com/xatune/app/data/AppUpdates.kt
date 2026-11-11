@@ -2,7 +2,6 @@ package com.xatune.app.data
 
 import android.annotation.SuppressLint
 import android.content.Context
-import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.xatune.app.BuildConfig
 import kotlinx.coroutines.CancellationException
@@ -57,15 +56,12 @@ interface UpdateStorage {
 /** Kept outside school-account storage so logout does not erase update preferences or logs. */
 class UpdatePreferences(context: Context) : UpdateStorage {
     private val preferences = context.getSharedPreferences("app_updates_v2", Context.MODE_PRIVATE)
-    private val gson = Gson()
     override suspend fun read(): AppUpdateState = withContext(Dispatchers.IO) {
-        runCatching { gson.fromJson(preferences.getString("state", null), AppUpdateState::class.java) }
-            .getOrNull()?.copy(checking = false, message = null, offer = null) ?: AppUpdateState()
+        UpdateStateCodec.decode(preferences.getString("state", null))
     }
     @SuppressLint("ApplySharedPref")
     override suspend fun write(state: AppUpdateState): Unit = withContext(Dispatchers.IO) {
-        val saved = state.copy(logs = state.logs.take(2), checking = false, message = null, offer = null)
-        if (!preferences.edit().putString("state", gson.toJson(saved)).commit()) throw IOException("无法保存更新设置与日志")
+        if (!preferences.edit().putString("state", UpdateStateCodec.encode(state)).commit()) throw IOException("无法保存更新设置与日志")
     }
 }
 
