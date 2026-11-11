@@ -1,4 +1,4 @@
-name: Android unsigned build
+name: CI 编译
 
 on:
   workflow_dispatch:
@@ -15,36 +15,36 @@ concurrency:
 jobs:
   build:
     if: github.ref == 'refs/heads/main'
-    name:  Android prerelease build
+    name: Android 预发布构建
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
-      - name: Check out source
+      - name: 检出源代码
         uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - name: Set up Java 17
+      - name: 配置 JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
+      - name: 配置 Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Install Android SDK packages
+      - name: 安装 Android SDK 组件
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           "platforms;android-36" "build-tools;36.0.0"
 
       # Release has no signingConfig. Other variants and the packaging
       # script use development signing and must not be built here.
-      - name: Build unsigned APKs
+      - name: 构建未签名 APK
         run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
 
-      - name: Sign APKs
+      - name: 签名 APK
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -87,7 +87,7 @@ jobs:
             "$APKSIGNER" verify --verbose --print-certs "$signed"
           done
 
-      - name: Name signed APKs
+      - name: 重命名 APK
         id: apks
         shell: bash
         run: |
@@ -125,7 +125,7 @@ jobs:
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
 
       # Each upload contains exactly one APK, with no surrounding ZIP archive.
-      - name: Upload arm64-v8a APK
+      - name: 上传 arm64-v8a APK
         uses: actions/upload-artifact@v7
         with:
           path: artifacts/${{ steps.apks.outputs.prefix }}-arm64-v8a.apk
@@ -133,7 +133,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload armeabi-v7a APK
+      - name: 上传 armeabi-v7a APK
         uses: actions/upload-artifact@v7
         with:
           path: artifacts/${{ steps.apks.outputs.prefix }}-armeabi-v7a.apk
@@ -141,7 +141,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload x86 APK
+      - name: 上传 x86 APK
         uses: actions/upload-artifact@v7
         with:
           path: artifacts/${{ steps.apks.outputs.prefix }}-x86.apk
@@ -149,7 +149,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload x86_64 APK
+      - name: 上传 x86_64 APK
         uses: actions/upload-artifact@v7
         with:
           path: artifacts/${{ steps.apks.outputs.prefix }}-x86_64.apk
@@ -157,7 +157,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish rolling prerelease
+      - name: 发布 apk 至 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
