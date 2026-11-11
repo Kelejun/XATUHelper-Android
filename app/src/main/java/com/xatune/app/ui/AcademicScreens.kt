@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -234,7 +235,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun SettingsScreen(state: UiState, onBack: () -> Unit, onCalibrate: () -> Unit, onRelogin: () -> Unit, onLogout: () -> Unit, onReminders: () -> Unit = {}, onWidgets: () -> Unit = {}, onWeekend: (Boolean) -> Unit = {}, onDiagnostics: (Boolean) -> Unit = {}, campus: CampusState = CampusState(), onAutoElectric: (Boolean) -> Unit = {}, update: UpdateUi = UpdateUi(), onCheckUpdates: () -> Unit = {}, onCheckinLocation: () -> Unit = {}, onUpdateChannel: (UpdateChannel) -> Unit = {}, onUpdateServer: (UpdateServer) -> Unit = {}, onUpdateRepository: (String) -> Unit = {}, onAutomaticUpdates: (Boolean) -> Unit = {}) {
+@Composable fun SettingsScreen(state: UiState, onBack: () -> Unit, onCalibrate: () -> Unit, onRelogin: () -> Unit, onLogout: () -> Unit, onReminders: () -> Unit = {}, onWidgets: () -> Unit = {}, onWeekend: (Boolean) -> Unit = {}, onDiagnostics: (Boolean) -> Unit = {}, campus: CampusState = CampusState(), onAutoElectric: (Boolean) -> Unit = {}, update: UpdateUi = UpdateUi(), onCheckUpdates: () -> Unit = {}, onCheckinLocation: () -> Unit = {}, onUpdateChannel: (UpdateChannel) -> Unit = {}, onUpdateServer: (UpdateServer) -> Unit = {}, onUpdateRepository: (String) -> Unit = {}, onAutomaticUpdates: (Boolean) -> Unit = {}, announcements: AnnouncementViewModel? = null, onOpenAnnouncement: (com.xatune.app.data.ReceivedAnnouncement) -> Unit = {}, onAnnouncementHistory: () -> Unit = {}) {
     var confirmLogout by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -254,6 +255,9 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
                         if (!state.demo) FilledTonalButton(onClick = onRelogin, enabled = !state.busy) { Text("重新登录") }
                     }
                 }
+            }
+            announcements?.let { center ->
+                item { AnnouncementSettings(center, onOpenAnnouncement, onAnnouncementHistory) }
             }
             item { SectionHeading("课程表与校园") }
             item { ServiceRow("校准第一周日期", "按当前教学周修正本地课表", Icons.Default.EditCalendar, onClick = onCalibrate) }
@@ -309,4 +313,19 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
     }
     if (privacy) PrivacyPolicyDialog { privacy = false }
     if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false }, icon = { Icon(Icons.Default.Logout, null) }, title = { Text("退出登录？") }, text = { Text("将清除此设备上的账号、登录状态、课表和教务缓存。") }, confirmButton = { TextButton(onClick = { confirmLogout = false; onLogout() }) { Text("确认退出") } }, dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("取消") } })
+}
+
+@Composable private fun AnnouncementSettings(center: AnnouncementViewModel, onOpen: (com.xatune.app.data.ReceivedAnnouncement) -> Unit, onHistory: () -> Unit) {
+    val records by center.history.collectAsStateWithLifecycle()
+    val latest = records.maxByOrNull { it.announcement.publishedAt }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeading("公告")
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().clickable(enabled = latest != null) { latest?.let(onOpen) }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("最新公告", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(latest?.announcement?.title ?: "暂无公告", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        ServiceRow("历史公告", "${records.size} 条", Icons.Default.History, onClick = onHistory)
+    }
 }

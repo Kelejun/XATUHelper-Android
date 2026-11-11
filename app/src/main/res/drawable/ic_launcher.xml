@@ -1,1 +1,4 @@
-<bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/ic_launcher_ios" android:gravity="fill" />
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape android:shape="rectangle"><corners android:radius="20dp" /><solid android:color="@color/ic_launcher_background" /></shape></item>
+    <item android:drawable="@drawable/ic_launcher_cap" />
+</layer-list>

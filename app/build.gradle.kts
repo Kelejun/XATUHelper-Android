@@ -23,7 +23,7 @@ android {
         applicationId = "com.xatune.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 39
+        versionCode = 40
         versionName = "1.1.10"
         buildConfigField("String", "PUSH_CHANNEL", "\"$pushChannel\"")
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
@@ -48,7 +48,7 @@ android {
     buildTypes {
         debug {
             buildConfigField("boolean", "DEMO_ENABLED", "false")
-            buildConfigField("String", "ANNOUNCEMENTS_BASE_URL", "\"${providers.gradleProperty("announcementsBaseUrl").orElse("http://localhost:8765").get()}\"")
+            buildConfigField("String", "ANNOUNCEMENTS_BASE_URL", "\"${providers.gradleProperty("announcementsBaseUrl").orElse("http://47.109.84.89").get()}\"")
         }
         release {
             isMinifyEnabled = true
