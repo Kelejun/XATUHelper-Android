@@ -188,11 +188,11 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
-              --title "XATune Prerelease" --notes-file release-assets/release-notes.md \
+              --title "XATune PreRelease" --notes-file release-assets/release-notes.md \
               --prerelease --latest=false
           else
             gh release create "$TAG" --verify-tag \
-              --title "XATune Prerelease" --notes-file release-assets/release-notes.md \
+              --title "XATune PreRelease" --notes-file release-assets/release-notes.md \
               --prerelease --latest=false
           fi
 

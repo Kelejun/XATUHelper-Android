@@ -90,11 +90,12 @@ def prepare(apk_dir, output_dir, channel, repository, commit, changelog=""):
         "".join(f"{asset['sha256']}  {asset['name']}\n" for asset in assets.values()),
         encoding="utf-8")
     (output_dir / "release-notes.md").write_text(
-        ("**⚠️ 此处提供的是开发版的自动构建，可能出现不稳定、功能没做完等情况。除非你能接受这些问题，否则我们建议你下载下方带正式版本号的 Release**\n\n"
+        ("**⚠️ 此处提供的是开发版的自动构建，可能出现不稳定、功能未完成等情况。除非你能接受这些问题，否则我们建议你下载下方带正式版本号的 Release**\n\n"
          if not stable else "") +
         f"**对于大多数用户，如果你不知道该下哪个，请下载{assets['arm64-v8a']['name']}**\n\n"
         f"{notes}\n\nCommit: `{commit}`\n\n"
         + (f"### 提交记录\n\n{changelog.strip() or '本次构建无新增提交。'}\n\n" if not stable else "")
+        + ("### 附件\n\n" if not stable else "")
         + "\n".join(f"- `{abi}`：`{asset['name']}`" for abi, asset in assets.items()) + "\n",
         encoding="utf-8")
     return {"prefix": prefix, "tag": tag, "version_name": version_name,
