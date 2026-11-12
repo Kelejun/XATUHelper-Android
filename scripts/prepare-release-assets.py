@@ -12,7 +12,7 @@ import shutil
 ABIS = ("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 
 
-def prepare(apk_dir, output_dir, channel, repository, commit):
+def prepare(apk_dir, output_dir, channel, repository, commit, changelog=""):
     if channel not in ("prerelease", "release"):
         raise ValueError("Unknown release channel")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
@@ -90,8 +90,11 @@ def prepare(apk_dir, output_dir, channel, repository, commit):
         "".join(f"{asset['sha256']}  {asset['name']}\n" for asset in assets.values()),
         encoding="utf-8")
     (output_dir / "release-notes.md").write_text(
+        ("**⚠️ 此处提供的是开发版的自动构建，可能出现不稳定、功能没做完等情况。除非你能接受这些问题，否则我们建议你下载下方带正式版本号的 Release**\n\n"
+         if not stable else "") +
         f"**对于大多数用户，如果你不知道该下哪个，请下载{assets['arm64-v8a']['name']}**\n\n"
         f"{notes}\n\nCommit: `{commit}`\n\n"
+        + (f"### 提交记录\n\n{changelog.strip() or '本次构建无新增提交。'}\n\n" if not stable else "")
         + "\n".join(f"- `{abi}`：`{asset['name']}`" for abi, asset in assets.items()) + "\n",
         encoding="utf-8")
     return {"prefix": prefix, "tag": tag, "version_name": version_name,
@@ -106,9 +109,12 @@ def main():
     parser.add_argument("--repository", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--github-output", type=Path)
+    parser.add_argument("--changelog-file", type=Path)
     args = parser.parse_args()
     try:
-        outputs = prepare(args.apk_dir, args.output_dir, args.channel, args.repository, args.commit)
+        changelog = args.changelog_file.read_text(encoding="utf-8") if args.changelog_file else ""
+        outputs = prepare(args.apk_dir, args.output_dir, args.channel, args.repository, args.commit,
+                          changelog)
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f"Cannot prepare release assets: {error}\n")
     if args.github_output:

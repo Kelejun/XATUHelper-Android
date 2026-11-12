@@ -23,15 +23,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prerelease:
+  prerelease-context:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && inputs.channel == 'prerelease'))
+    name: 检查预发布提交
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.context.outputs.should_build }}
+      changelog: ${{ steps.context.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 比较已发布版本并生成提交记录
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/prerelease-context.py
+          --repository "$GITHUB_REPOSITORY"
+          --commit "$GITHUB_SHA"
+          --event "$GITHUB_EVENT_NAME"
+          --github-output "$GITHUB_OUTPUT"
+
+  prerelease:
+    needs: prerelease-context
+    if: needs.prerelease-context.outputs.should_build == 'true'
     name: Android 预发布构建
     uses: ./.github/workflows/android-package.yml
     with:
       channel: prerelease
+      changelog: ${{ needs.prerelease-context.outputs.changelog }}
     secrets: inherit
 
   release:

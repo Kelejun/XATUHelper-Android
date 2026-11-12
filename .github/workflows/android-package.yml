@@ -6,6 +6,10 @@ on:
       channel:
         required: true
         type: string
+      changelog:
+        required: false
+        type: string
+        default: ''
     secrets:
       ANDROID_KEYSTORE_BASE64:
         required: true
@@ -45,7 +49,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: 验证渠道清单生成逻辑
-        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-prepare-release-assets.py
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-prepare-release-assets.py
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-prerelease-context.py
 
       - name: 安装 Android SDK 组件
         run: >-
@@ -106,13 +112,16 @@ jobs:
         id: apks
         env:
           CHANNEL: ${{ inputs.channel }}
-        run: >-
-          python3 scripts/prepare-release-assets.py
-          --apk-dir app/build/outputs/apk/release
-          --output-dir release-assets
-          --channel "$CHANNEL"
-          --repository "$GITHUB_REPOSITORY"
-          --commit "$GITHUB_SHA"
+          CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          printf '%s' "$CHANGELOG" > "$RUNNER_TEMP/prerelease-changelog.txt"
+          python3 scripts/prepare-release-assets.py \
+          --apk-dir app/build/outputs/apk/release \
+          --output-dir release-assets \
+          --channel "$CHANNEL" \
+          --repository "$GITHUB_REPOSITORY" \
+          --commit "$GITHUB_SHA" \
+          --changelog-file "$RUNNER_TEMP/prerelease-changelog.txt" \
           --github-output "$GITHUB_OUTPUT"
 
       # 每个构建产物仍为独立 APK；清单单独上传。

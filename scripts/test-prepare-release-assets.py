@@ -35,10 +35,10 @@ class ReleaseAssetsTest(unittest.TestCase):
         for abi in module.ABIS:
             (self.apks / f"app-{abi}-release-signed.apk").write_bytes(abi.encode())
 
-    def prepare(self, channel="release"):
+    def prepare(self, channel="release", changelog=""):
         (self.apks / "output-metadata.json").write_text(json.dumps(self.metadata))
         return module.prepare(self.apks, self.output, channel,
-                              "Kelejun/XATUHelper-Android", "abcdef0" + "1" * 33)
+                              "Kelejun/XATUHelper-Android", "abcdef0" + "1" * 33, changelog)
 
     def test_release_manifest_matches_all_packaged_files(self):
         outputs = self.prepare()
@@ -60,6 +60,16 @@ class ReleaseAssetsTest(unittest.TestCase):
             self.assertIn(f"{asset['sha256']}  {asset['name']}", checksums)
             self.assertTrue(asset["url"].endswith(f"/v1.1.9/{asset['name']}"))
         self.assertIn("**对于大多数用户", (self.output / "release-notes.md").read_text())
+        self.assertNotIn("开发版", (self.output / "release-notes.md").read_text())
+        self.assertNotIn("提交记录", (self.output / "release-notes.md").read_text())
+
+    def test_prerelease_description_includes_warning_and_commit_history(self):
+        self.prepare("prerelease", "- abcdef0 修复登录\n- 1234567 更新课表")
+        notes = (self.output / "release-notes.md").read_text()
+        self.assertTrue(notes.startswith("**⚠️ 此处提供的是开发版的自动构建"))
+        self.assertIn("请下载XATune-v1.1.9.r32.abcdef0-arm64-v8a.apk**", notes)
+        self.assertIn("### 提交记录\n\n- abcdef0 修复登录\n- 1234567 更新课表", notes)
+        self.assertLess(notes.index("提交记录"), notes.index("- `arm64-v8a`"))
 
     def test_prerelease_keeps_ci_names_and_rolling_tag(self):
         outputs = self.prepare("prerelease")
