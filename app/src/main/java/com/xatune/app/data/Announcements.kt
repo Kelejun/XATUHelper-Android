@@ -41,7 +41,7 @@ object AnnouncementCodec {
 
 class AnnouncementClient(private val client: OkHttpClient, base: String, allowHttp: Boolean) {
     val endpoint = base.trim().trimEnd('/').toHttpUrlOrNull()?.takeIf {
-        (it.isHttps || allowHttp) && it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null
+        (it.isHttps || allowHttp || it.host == "47.109.84.89") && it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null
     }?.newBuilder()?.addPathSegments("v1/announcements")?.addQueryParameter("platform", "android")?.build()
 
     fun fetch(): Pair<List<Announcement>, Long> {

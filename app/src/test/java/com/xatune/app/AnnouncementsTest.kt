@@ -58,10 +58,13 @@ class AnnouncementsTest {
             assertEquals("/prefix/v1/announcements?platform=android", server.takeRequest().path)
         }
     }
-    @Test fun productionRequiresHttpsAndRejectsCredentialsOrQuery() {
+    @Test fun productionAllowsOnlyFixedHttpHostOrHttpsAndRejectsCredentialsQueryAndFragment() {
         val client = OkHttpClient()
-        for (base in listOf("http://example.com", "https://user@example.com", "https://example.com?a=1", "https://example.com#x", "garbage")) assertNull(AnnouncementClient(client, base, false).endpoint)
+        for (base in listOf("http://example.com", "http://47.109.84.89.evil.example", "http://sub.47.109.84.89", "http://user@47.109.84.89", "http://47.109.84.89?a=1", "http://47.109.84.89#x", "https://user@example.com", "https://example.com?a=1", "https://example.com#x", "garbage")) assertNull(base, AnnouncementClient(client, base, false).endpoint)
         assertNotNull(AnnouncementClient(client, "https://example.com", false).endpoint)
+        assertEquals("http://47.109.84.89/v1/announcements?platform=android", AnnouncementClient(client, "http://47.109.84.89", false).endpoint.toString())
+        assertNull(AnnouncementClient(client, "http://localhost", false).endpoint)
+        assertNotNull(AnnouncementClient(client, "http://localhost", true).endpoint)
     }
     @Test fun clientRejectsExpiredFutureDuplicateAndNonJsonFeeds() {
         MockWebServer().use { server ->

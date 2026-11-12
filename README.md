@@ -46,7 +46,7 @@ performance/          独立进程的优化构建 UIAutomator 检查
 
 网络、HTML 解析和存储在后台执行；Compose 只消费不可变状态。按周过滤后再合并节次，避免单双周课程互相污染。认证串行处理，自动恢复最多每分钟一次、每小时三次；浏览页面不会触发反复登录。
 
-因教务系统及校园网自助平台仅支持 HTTP ，对 `jwgl2018.xatu.edu.cn` 和 `self.xatu.edu.cn` 单独放行 HTTP，其余连接使用 HTTPS 。Debug／Benchmark 额外允许 localhost 。不忽略 TLS 证书错误。
+因教务系统、校园网自助平台及缴费服务使用 HTTP，对 `jwgl2018.xatu.edu.cn`、`self.xatu.edu.cn` 和 `jfpay.xatu.edu.cn` 单独放行 HTTP。公告默认连接 `http://47.109.84.89`，正式版仅为该固定 IP 开放公告 HTTP；其他公告服务地址须使用 HTTPS。Debug／QA 额外允许 localhost。不忽略 TLS 证书错误。
 
 ## 许可
 
