@@ -25,3 +25,5 @@ __pycache__/
 VALIDATION*.md
 PARITY-IOS.md
 RELEASE-*.md
+
+.vscode/
