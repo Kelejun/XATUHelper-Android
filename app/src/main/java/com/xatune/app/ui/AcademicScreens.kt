@@ -46,7 +46,8 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
             IconButton(onClick = { model.loadAcademic(kind, scope, true) }, enabled = !reading.loading) { Icon(Icons.Default.Refresh, "刷新${kind.title}") }
         })
     }) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = reading.loading, onRefresh = { model.loadAcademic(kind, scope, true) }, modifier = Modifier.padding(padding).fillMaxSize().testTag("academicRefresh")) {
+        Column(Modifier.fillMaxSize()) {
             LoadingProgress(reading.loading)
             if (state.demo) Text("示例数据 · 未连接学校账号", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.labelMedium)
             if (kind != AcademicKind.PLAN) {
@@ -86,6 +87,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
                     AcademicKind.PLAN -> data.plan?.let { PlanList(it, data.catalog, data.catalogWarning) }
                 }
             }
+        }
         }
     }
 }
