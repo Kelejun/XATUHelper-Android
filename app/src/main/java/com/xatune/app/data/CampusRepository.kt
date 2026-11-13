@@ -17,13 +17,28 @@ class CampusRepository(private val context: Context, val store: LocalStore, priv
     suspend fun electricity(account: String): Electricity? = store.extra("electric:$account", Electricity::class.java)?.takeIf { it.dorm == selectedDorm(account) }
     suspend fun autoElectricity(account: String) = store.extra("autoElectric:$account", Boolean::class.javaObjectType) ?: true
     suspend fun reminders(account: String) = store.extra("reminders:$account", ReminderSettings::class.java) ?: ReminderSettings()
-    suspend fun calendar(): SchoolCalendar? = withContext(Dispatchers.IO) {
+    private suspend fun rawCalendar(): SchoolCalendar? = withContext(Dispatchers.IO) {
         val cached = store.extra("schoolCalendar", SchoolCalendar::class.java) ?: return@withContext null
         if (cached.recognitionVersion >= 1 || cached.imagePath.isBlank()) return@withContext cached
         // Re-read the saved image when upgrading, without depending on campus network access.
         val bitmap = runCatching { decodeCalendar(File(cached.imagePath).takeIf { it.isFile }?.readBytes() ?: return@withContext cached) }.getOrNull() ?: return@withContext cached
         val recognized = try { CalendarOcr.read(bitmap) } catch (_: Exception) { return@withContext cached } finally { bitmap.recycle() }
         cached.copy(rawText = recognized.text, semesters = recognized.semesters.ifEmpty { cached.semesters }, coverageEnd = recognized.coverageEnd, recognitionVersion = 1).also { store.extra("schoolCalendar", it) }
+    }
+    suspend fun calendar(): SchoolCalendar? = rawCalendar()?.let { applyCorrection(it) }
+    suspend fun originalCalendar(): SchoolCalendar? = rawCalendar()
+    private fun correctionKey(url: String) = "schoolCalendar.corrections:$url"
+    suspend fun applyCorrection(raw: SchoolCalendar): SchoolCalendar {
+        val correction = store.extra(correctionKey(raw.imageUrl), CalendarCorrection::class.java)?.takeIf { it.error() == null }?.normalized() ?: return raw
+        return raw.copy(semesters = correction.semesters, notes = correction.notes)
+    }
+    suspend fun saveCalendarCorrection(imageUrl: String, draft: CalendarCorrection): SchoolCalendar {
+        val correction = draft.normalized()
+        require(correction.error() == null) { correction.error().orEmpty() }
+        val raw = rawCalendar() ?: error("校历已更新，请重新打开")
+        require(raw.imageUrl == imageUrl) { "校历已更新，请重新打开" }
+        store.extra(correctionKey(imageUrl), correction.takeUnless { it == CalendarCorrection.original(raw) })
+        return applyCorrection(raw)
     }
     suspend fun projects(account: String) = session.withSession(account) { pay.projects() }
     suspend fun areas(account: String, project: String) = session.withSession(account) { pay.areas(project) }
@@ -72,6 +87,6 @@ class CampusRepository(private val context: Context, val store: LocalStore, priv
         val result = SchoolCalendar(Jsoup.parse(document).title().substringBefore("-西安工业"), page, image, file.absolutePath, recognized.text, recognized.semesters, System.currentTimeMillis(), recognized.coverageEnd, 1)
         store.extra("schoolCalendar", result)
         context.filesDir.listFiles()?.filter { it.name.startsWith("calendar-") && it != file }?.forEach { it.delete() }
-        result
+        applyCorrection(result)
     }
 }

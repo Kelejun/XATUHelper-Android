@@ -95,12 +95,19 @@ class CampusController(private val repository: CampusRepository, private val sco
         mutable.update { it.copy(reminders = settings) }
         sync()
     }
+    suspend fun originalCalendar() = repository.originalCalendar()
+    fun saveCalendarCorrection(url: String, draft: CalendarCorrection, saved: () -> Unit) = action {
+        val result = repository.saveCalendarCorrection(url, draft)
+        mutable.update { it.copy(calendar = result) }
+        sync()
+        saved()
+    }
     fun calendar(force: Boolean = false) = action { account ->
         val cached = state.value.calendar
         if (!force && cached != null && System.currentTimeMillis() - cached.fetchedAt < 7L * 86_400_000) return@action
         val result = if (account == "__demo__") {
             val year = schoolToday().year
-            SchoolCalendar("示例校历", CalendarParser.index, "", "", "示例数据，仅用于预览。", listOf(SemesterSpan("第一学期", "$year-09-01", "${year + 1}-01-20"), SemesterSpan("第二学期", "${year + 1}-02-20", "${year + 1}-07-10")), System.currentTimeMillis(), "${year + 1}-08-29").also { repository.store.extra("schoolCalendar", it) }
+            SchoolCalendar("示例校历", CalendarParser.index, "demo://calendar", "", "示例数据，仅用于预览。", listOf(SemesterSpan("第一学期", "$year-09-01", "${year + 1}-01-20"), SemesterSpan("第二学期", "${year + 1}-02-20", "${year + 1}-07-10")), System.currentTimeMillis(), "${year + 1}-08-29").also { repository.store.extra("schoolCalendar", it) }.let { repository.applyCorrection(it) }
         } else repository.refreshCalendar()
         mutable.update { it.copy(calendar = result) }; sync()
     }

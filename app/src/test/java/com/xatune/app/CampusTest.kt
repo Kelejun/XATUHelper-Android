@@ -105,14 +105,14 @@ class CampusTest {
         val calendar = SchoolCalendar("", "", "", "", "", spans, 0)
         assertEquals("2027-01-21", nextBreak(calendar, LocalDate.parse("2026-11-01"))!!.start.toString())
     }
-    @Test fun summerRangeUsesImageEndAndRemainsActiveThroughLastDay() {
+    @Test fun summerRangeUsesFirstStartAndRemainsActiveThroughLastDay() {
         val spans = CalendarParser.semesters("2026年8月31日－2027年1月15日；2027年3月1日—2027年7月16日")
         val calendar = SchoolCalendar("", "", "", "", "", spans, 0, "2027-08-29")
         assertEquals(listOf(SchoolBreak("寒假", LocalDate.parse("2027-01-16"), LocalDate.parse("2027-02-28")), SchoolBreak("暑假", LocalDate.parse("2027-07-17"), LocalDate.parse("2027-08-29"))), schoolBreaks(calendar))
         assertEquals("暑假", nextBreak(calendar, LocalDate.parse("2027-08-29"))?.title)
         assertNull(nextBreak(calendar, LocalDate.parse("2027-08-30")))
-        assertNull(schoolBreaks(calendar.copy(coverageEnd = null)).last().end)
-        assertNull(nextBreak(calendar.copy(coverageEnd = null), LocalDate.parse("2027-08-01")))
+        assertEquals(LocalDate.parse("2027-08-29"), schoolBreaks(calendar.copy(coverageEnd = null)).last().end)
+        assertEquals("暑假", nextBreak(calendar.copy(coverageEnd = null), LocalDate.parse("2027-08-01"))?.title)
     }
     @Test fun gridEndIgnoresWeekNumbersAndFooterDates() {
         fun cell(text: String, x: Int, y: Int) = CalendarParser.Cell(text, x, y, x + 20, y + 20)

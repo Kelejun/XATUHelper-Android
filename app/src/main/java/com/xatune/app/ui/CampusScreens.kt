@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.Lifecycle
 import com.xatune.app.model.*
 import com.xatune.app.platform.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.*
@@ -158,6 +159,9 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
     val calendarContext = LocalContext.current
     var image by remember { mutableStateOf(false) }
     var raw by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    var original by remember { mutableStateOf<SchoolCalendar?>(null) }
+    val editScope = rememberCoroutineScope()
     LaunchedEffect(Unit) { controller.calendar() }
     CampusFrame("校历", state, onBack, { controller.calendar(true) }) {
         LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.testTag("schoolCalendar")) {
@@ -173,11 +177,12 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
                 } }
                 item { InfoPanel("日期由本机识别，仅供参考，请以官方原图为准。") }
                 if (calendar.imagePath.isNotBlank()) item { Button(onClick = { image = true }) { Text("查看校历原图") } }
+                item { TextButton(onClick = { editScope.launch { original = controller.originalCalendar(); editing = original != null } }, enabled = !state.busy) { Text("手动校正") } }
+                items(calendar.notes.orEmpty()) { note -> Text(note) }
                 items(calendar.semesters, key = { it.start }) { span -> ContentCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(span.label, style = MaterialTheme.typography.titleMedium); Text("${span.start} — ${span.end}") } } }
                 items(schoolBreaks(calendar), key = { "break:${it.start}" }) { holiday -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(holiday.title, style = MaterialTheme.typography.titleLarge)
                     Text("${holiday.start} — ${holiday.end?.toString() ?: "结束日期待识别"}")
-                    if (holiday.title == "暑假" && holiday.end != null) Text("结束日期取自校历图中最后一天", style = MaterialTheme.typography.bodySmall)
                 } } }
 
                 if (calendar.semesters.isEmpty()) item { Text("尚未识别到完整学期日期，请查看原图。", color = MaterialTheme.colorScheme.error) }
@@ -188,6 +193,9 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
             }
         }
     }
+    if (editing) original?.let { source -> CalendarCorrectionEditor(state.calendar ?: source, source, state.busy, { editing = false }) { draft ->
+        controller.saveCalendarCorrection(source.imageUrl, draft) { editing = false }
+    } }
     if (image) Dialog(onDismissRequest = { image = false }, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) { Column(Modifier.safeDrawingPadding()) {
             TextButton(onClick = { image = false }) { Text("关闭原图") }

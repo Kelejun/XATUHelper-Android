@@ -23,13 +23,13 @@ fun dailyDeduction(previous: DailyBalance?, current: DailyBalance): BigDecimal? 
     return change.takeIf { it.signum() >= 0 }
 }
 data class SemesterSpan(val label: String, val start: String, val end: String)
-data class SchoolCalendar(val title: String, val pageUrl: String, val imageUrl: String, val imagePath: String, val rawText: String, val semesters: List<SemesterSpan>, val fetchedAt: Long, val coverageEnd: String? = null, val recognitionVersion: Int = 0)
+data class SchoolCalendar(val title: String, val pageUrl: String, val imageUrl: String, val imagePath: String, val rawText: String, val semesters: List<SemesterSpan>, val fetchedAt: Long, val coverageEnd: String? = null, val recognitionVersion: Int = 0, val notes: List<String> = emptyList())
 data class SchoolBreak(val title: String, val start: LocalDate, val end: LocalDate?)
 fun schoolBreaks(calendar: SchoolCalendar?): List<SchoolBreak> = calendar?.semesters?.mapNotNull { span ->
     val end = runCatching { LocalDate.parse(span.end) }.getOrNull() ?: return@mapNotNull null
     val start = end.plusDays(1)
     val next = calendar.semesters.mapNotNull { runCatching { LocalDate.parse(it.start) }.getOrNull() }.filter { it > start }.minOrNull()
-    val until = next?.minusDays(1) ?: runCatching { LocalDate.parse(calendar.coverageEnd) }.getOrNull()?.takeIf { it >= start }
+    val until = next?.minusDays(1) ?: (if (calendar.semesters.size == 2) runCatching { LocalDate.parse(calendar.semesters.minBy { it.start }.start).plusDays(363) }.getOrNull() else runCatching { LocalDate.parse(calendar.coverageEnd) }.getOrNull())?.takeIf { it >= start }
     SchoolBreak(if (start.monthValue in 1..3) "寒假" else "暑假", start, until)
 }?.sortedBy { it.start }.orEmpty()
 fun nextBreak(calendar: SchoolCalendar?, today: LocalDate = schoolToday()): SchoolBreak? = schoolBreaks(calendar).firstOrNull {
