@@ -98,20 +98,13 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
             if (state.dorm != null) {
                 item { ToggleRow("每日自动更新余额", "将每日查询结果保存为用电记录", state.autoElectric, controller::autoElectric, enabled = !state.busy) }
                 item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(usageChart, { usageChart = true }, label = { Text("近七天用电") })
+                    FilterChip(usageChart, { usageChart = true }, label = { Text("最近30天用电") })
                     FilterChip(!usageChart, { usageChart = false }, label = { Text("余额趋势") })
                 } }
                 item {
-                    Text(if (usageChart) "近七天用电估算（度）" else "近七天余额（度）", style = MaterialTheme.typography.titleMedium)
-                    val records = if (usageChart) state.history.mapIndexedNotNull { index, record ->
-                        dailyDeduction(state.history.getOrNull(index - 1), record)?.let { DailyBalance(record.day, it.toPlainString()) }
-                    } else state.history
-                    val recent = records.filter { runCatching { LocalDate.parse(it.day) in schoolToday().minusDays(6)..schoolToday() }.getOrDefault(false) }
-                    BalanceChart(recent, usageChart)
-                    if (usageChart && recent.isNotEmpty()) {
-                        val average = recent.sumOf { it.balance.toBigDecimal() }.divide(recent.size.toBigDecimal(), 2, java.math.RoundingMode.HALF_UP)
-                        Text("有记录的 ${recent.size} 天平均用电 $average 度", style = MaterialTheme.typography.bodySmall)
-                    }
+                    Text(if (usageChart) "最近30天用电估算（度）" else "近七天余额（度）", style = MaterialTheme.typography.titleMedium)
+                    if (usageChart) ElectricUsageChart(electricUsage(state.history))
+                    else BalanceChart(state.history.filter { runCatching { LocalDate.parse(it.day) in schoolToday().minusDays(6)..schoolToday() }.getOrDefault(false) }, false)
                 }
                 item { Text("历史由本机每日查询生成；相邻两天电量下降为用电估算，电量上升视为充值补电，缺少相邻日记录时不推算用量。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 items(state.history.asReversed(), key = { it.day }) { record ->
