@@ -14,7 +14,7 @@ fun academicKey(kind: AcademicKind, scope: String) = "${kind.name}:$scope"
 
 data class UiState(
     val academic: Map<String, AcademicUi> = emptyMap(), val notice: AcademicNotice? = null, val allGrades: Boolean = false,
-    val showWeekend: Boolean = true, val showDiagnostics: Boolean = false, val currentSemester: String = "",
+    val gradeRevision: Int = 0, val showWeekend: Boolean = true, val showDiagnostics: Boolean = false, val currentSemester: String = "",
     val edits: List<TimetableEdit> = emptyList(), val pendingEdits: Map<String, List<Int>> = emptyMap(), val baseTable: Timetable? = null,
     val starting: Boolean = true, val account: String = "", val table: Timetable? = null,
     val semesters: List<Semester> = emptyList(), val selectedSemester: String = "", val kind: TableKind = TableKind.STUDENT,
@@ -96,7 +96,7 @@ class HelperViewModel(private val repository: TimetableRepository, campusReposit
             finally { mutable.update { it.copy(busy = false) } }
         }
     }
-    private fun cancelAcademic() { academicJobs.values.forEach { it.cancel() }; academicJobs.clear() }
+    private fun cancelAcademic() { gradeRefreshPending = false; academicJobs.values.forEach { it.cancel() }; academicJobs.clear() }
     fun login(account: String, password: String) {
         if (account.isBlank() || password.isEmpty()) { mutable.update { it.copy(error = "请填写学号和密码") }; return }
         cancelAcademic()
@@ -148,7 +148,18 @@ class HelperViewModel(private val repository: TimetableRepository, campusReposit
         mutable.update { it.copy(showDiagnostics = value) }
         viewModelScope.launch { repository.store.extra("showDiagnostics", value) }
     }
-    fun gradeScope(all: Boolean) { mutable.update { it.copy(allGrades = all) } }
+    private var gradeRefreshPending = false
+    fun gradesLoading() = state.value.academic.any { (key, value) -> key.startsWith("GRADES:") && value.loading } || academicJobs.any { (key, job) -> key.startsWith("GRADES:") && job.isActive }
+    fun gradeSemesterChanged(): Boolean {
+        if (gradesLoading()) return false
+        gradeRefreshPending = true
+        mutable.update { it.copy(gradeRevision = it.gradeRevision + 1, academic = if (it.demo) it.academic else it.academic.filterKeys { key -> !key.startsWith("GRADES:") }) }
+        return true
+    }
+    fun gradeScope(all: Boolean) {
+        if (all == state.value.allGrades || !gradeSemesterChanged()) return
+        mutable.update { it.copy(allGrades = all) }
+    }
     fun calibrateWeek(week: Int) = calibrate(mondayForWeek(week).toString())
     fun changeWeek(value: Int) { mutable.update { it.copy(week = value.coerceIn(1, 30)) } }
     fun calibrate(date: String) { action {
@@ -182,13 +193,20 @@ class HelperViewModel(private val repository: TimetableRepository, campusReposit
         val account = state.value.account
         val key = academicKey(kind, scope)
         if (account.isBlank() || academicJobs[key]?.isActive == true) return
+        val changedRange = kind == AcademicKind.GRADES && gradeRefreshPending
+        if (kind == AcademicKind.GRADES) gradeRefreshPending = false
         academicJobs[key] = viewModelScope.launch {
             fun publish(reading: AcademicUi) { mutable.update { if (it.account == account) it.copy(academic = it.academic + (key to reading)) else it } }
-            val cached = try { state.value.academic[key]?.data ?: repository.store.academic(account, kind, scope) }
+            val cached = try {
+                if (changedRange && !state.value.demo) null
+                else state.value.academic[key]?.data
+                    ?: if (state.value.demo && kind == AcademicKind.GRADES) state.value.academic.values.firstNotNullOfOrNull { it.data?.takeIf { snapshot -> snapshot.grades != null } } ?: demoAcademic(kind)
+                    else repository.store.academic(account, kind, scope)
+            }
                 catch (e: CancellationException) { throw e }
                 catch (e: Exception) { publish(AcademicUi(error = message(e))); return@launch }
             publish(AcademicUi(cached))
-            if (!force && cached != null && System.currentTimeMillis() - cached.fetchedAt < kind.hours * 3_600_000) return@launch
+            if ((!force || state.value.demo) && cached != null && System.currentTimeMillis() - cached.fetchedAt < kind.hours * 3_600_000) return@launch
             publish(AcademicUi(cached, loading = true))
             try {
                 val snapshot = if (state.value.demo) demoAcademic(kind) else repository.refreshAcademic(account, kind, scope, forceCatalog = force)

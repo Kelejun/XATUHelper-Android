@@ -53,15 +53,15 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
             if (kind != AcademicKind.PLAN) {
                 Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.weight(1f)) {
-                        OutlinedButton(onClick = { semesterMenu = true }, enabled = !allGrades || kind == AcademicKind.EXAMS, modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { semesterMenu = true }, enabled = !reading.loading && (!allGrades || kind == AcademicKind.EXAMS), modifier = Modifier.fillMaxWidth()) {
                             Text(state.semesters.firstOrNull { it.id == semester }?.name ?: "当前学期", maxLines = 2)
                             Icon(Icons.Default.ArrowDropDown, null)
                         }
                         DropdownMenu(semesterMenu, { semesterMenu = false }) {
-                            state.semesters.forEach { term -> DropdownMenuItem(text = { Text(term.name) }, onClick = { semesterMenu = false; selectedSemester = term.id }) }
+                            state.semesters.forEach { term -> DropdownMenuItem(text = { Text(term.name) }, enabled = !reading.loading, onClick = { semesterMenu = false; if (!reading.loading && term.id != semester && (kind != AcademicKind.GRADES || model.gradeSemesterChanged())) selectedSemester = term.id }) }
                         }
                     }
-                    if (kind == AcademicKind.GRADES) FilterChip(selected = allGrades, onClick = { model.gradeScope(!allGrades) }, label = { Text("所有学期") })
+                    if (kind == AcademicKind.GRADES) FilterChip(selected = allGrades, enabled = !reading.loading, modifier = Modifier.testTag("allGradesScope"), onClick = { if (!reading.loading) model.gradeScope(!allGrades) }, label = { Text("所有学期") })
                 }
             }
             reading.error?.let { message ->
@@ -83,7 +83,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
                 Text("更新于 ${updated(data.fetchedAt)} · 可离线查看", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when (kind) {
                     AcademicKind.EXAMS -> ExamList(data.exams, state.semesters.firstOrNull { it.id == semester })
-                    AcademicKind.GRADES -> data.grades?.let { GradeList(it, scope) }
+                    AcademicKind.GRADES -> data.grades?.let { GradeList(it, "$scope:${state.gradeRevision}") }
                     AcademicKind.PLAN -> data.plan?.let { PlanList(it, data.catalog, data.catalogWarning) }
                 }
             }
