@@ -94,6 +94,7 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
                 item { OptionPicker("房间", state.rooms.filter { roomSearch.isBlank() || roomSearch in it.name }, state.room, state.busy || state.building == null, controller::room) }
                 item { Row { Button(onClick = { focusManager.clearFocus(); controller.bindDorm() }, enabled = !state.busy && state.room != null) { Text("保存并查询") }; TextButton(onClick = { focusManager.clearFocus(); controller.closeSelector() }, enabled = !state.busy) { Text("取消") } } }
             }
+            item { DiagnosticExport("电费") { "电费诊断\n有宿舍：${state.dorm != null}\n有余额缓存：${state.electric != null}\n更新毫秒：${state.electric?.checkedAt ?: 0}\n历史记录：${state.history.size}\n加载中：${state.busy}\n失败：${state.error != null}" } }
             if (state.dorm != null) {
                 item { ToggleRow("每日自动更新余额", "将每日查询结果保存为用电记录", state.autoElectric, controller::autoElectric, enabled = !state.busy) }
                 item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -156,7 +157,6 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
 }
 @Composable fun CalendarScreen(controller: CampusController, onBack: () -> Unit) {
     val state by controller.state.collectAsStateWithLifecycle()
-    val calendarContext = LocalContext.current
     var image by remember { mutableStateOf(false) }
     var raw by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
@@ -188,7 +188,7 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
                 if (calendar.semesters.isEmpty()) item { Text("尚未识别到完整学期日期，请查看原图。", color = MaterialTheme.colorScheme.error) }
                 item { TextButton(onClick = { raw = !raw }) { Text(if (raw) "收起识别文字" else "查看识别文字") }; if (raw) {
                     Text(calendar.rawText.ifBlank { "没有识别到文字，请查看原图。" })
-                    TextButton(onClick = { (calendarContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("校历识别文字", calendar.rawText)) }, enabled = calendar.rawText.isNotBlank()) { Text("复制识别文字") }
+                    DiagnosticExport("校历识别") { calendar.rawText }
                 } }
             }
         }

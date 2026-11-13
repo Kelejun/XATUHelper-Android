@@ -74,6 +74,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
                     }
                 }
             }
+            DiagnosticExport(kind.title) { diagnosticSummary(state) }
             val data = reading.data
             if (data == null) {
                 if (!reading.loading && reading.error == null) Text("尚无本地数据，请刷新。", Modifier.padding(24.dp))
@@ -239,7 +240,6 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
     var privacy by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    var copied by remember { mutableStateOf(false) }
     val location by rememberCheckinLocationSettings()
     val locationPreferences = remember(context) { com.xatune.app.platform.CheckinLocationPreferences(context) }
     var versionTaps by remember { mutableIntStateOf(0) }
@@ -274,11 +274,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
                 ContentCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(diagnosticSummary(state), style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("diagnostics"))
-                        TextButton(onClick = {
-                            (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                                .setPrimaryClip(android.content.ClipData.newPlainText("XATune 诊断", diagnosticSummary(state)))
-                            copied = true
-                        }) { Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if (copied) "已复制诊断数据" else "复制诊断数据") }
+                        DiagnosticExport("设置") { diagnosticSummary(state) }
                     }
                 }
             }
