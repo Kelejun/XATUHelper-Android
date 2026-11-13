@@ -18,6 +18,10 @@ class CampusController(private val repository: CampusRepository, private val sco
     private val mutable = MutableStateFlow(CampusState())
     val state = mutable.asStateFlow()
     private var job: Job? = null
+    private var automaticForeground = true
+    private var automaticCalendar = false
+    fun resumeAutomaticUpdates() { automaticForeground = true }
+    fun pauseAutomaticUpdates() { automaticForeground = false; if (automaticCalendar) job?.cancel() }
     suspend fun load() {
         val account = repository.store.account()
         if (account != state.value.account) job?.cancel()
@@ -103,12 +107,22 @@ class CampusController(private val repository: CampusRepository, private val sco
         saved()
     }
     fun calendar(force: Boolean = false) = action { account ->
+        if (!force && !automaticForeground) return@action
         val cached = state.value.calendar
-        if (!force && cached != null && System.currentTimeMillis() - cached.fetchedAt < 7L * 86_400_000) return@action
+        val reduced = repository.store.extra("reduceAcademicRefreshFrequency", Boolean::class.javaObjectType) == true
+        if (!force && reduced && cached != null && System.currentTimeMillis() - cached.fetchedAt < 7L * 86_400_000) return@action
+        if (!force && !reduced && account != "__demo__" && !repository.shouldRefreshCalendar()) return@action
         val result = if (account == "__demo__") {
             val year = schoolToday().year
             SchoolCalendar("示例校历", CalendarParser.index, "demo://calendar", "", "示例数据，仅用于预览。", listOf(SemesterSpan("第一学期", "$year-09-01", "${year + 1}-01-20"), SemesterSpan("第二学期", "${year + 1}-02-20", "${year + 1}-07-10")), System.currentTimeMillis(), "${year + 1}-08-29").also { repository.store.extra("schoolCalendar", it) }.let { repository.applyCorrection(it) }
-        } else repository.refreshCalendar()
+        } else if (force || reduced) repository.refreshCalendar() else {
+            automaticCalendar = true
+            try {
+                InformationRefreshGate.waitForSlot()
+                if (!automaticForeground) return@action
+                repository.automaticCalendar() ?: return@action
+            } finally { automaticCalendar = false }
+        }
         mutable.update { it.copy(calendar = result) }; sync()
     }
 }

@@ -40,6 +40,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
     var semesterMenu by remember { mutableStateOf(false) }
     val scope = if (kind == AcademicKind.PLAN || kind == AcademicKind.GRADES && allGrades) "all" else semester
     val reading = state.academic[academicKey(kind, scope)] ?: AcademicUi(loading = true)
+    val selectionLoading = reading.loading || kind == AcademicKind.GRADES && state.academic.any { (key, value) -> key.startsWith("GRADES:") && value.loading }
     LaunchedEffect(kind, scope) { model.loadAcademic(kind, scope) }
     Scaffold(topBar = {
         TopAppBar(title = { Text(kind.title) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回校园") } }, actions = {
@@ -53,15 +54,15 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
             if (kind != AcademicKind.PLAN) {
                 Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.weight(1f)) {
-                        OutlinedButton(onClick = { semesterMenu = true }, enabled = !reading.loading && (!allGrades || kind == AcademicKind.EXAMS), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { semesterMenu = true }, enabled = !selectionLoading && (!allGrades || kind == AcademicKind.EXAMS), modifier = Modifier.fillMaxWidth()) {
                             Text(state.semesters.firstOrNull { it.id == semester }?.name ?: "当前学期", maxLines = 2)
                             Icon(Icons.Default.ArrowDropDown, null)
                         }
                         DropdownMenu(semesterMenu, { semesterMenu = false }) {
-                            state.semesters.forEach { term -> DropdownMenuItem(text = { Text(term.name) }, enabled = !reading.loading, onClick = { semesterMenu = false; if (!reading.loading && term.id != semester && (kind != AcademicKind.GRADES || model.gradeSemesterChanged())) selectedSemester = term.id }) }
+                            state.semesters.forEach { term -> DropdownMenuItem(text = { Text(term.name) }, enabled = !selectionLoading, onClick = { semesterMenu = false; if (!selectionLoading && term.id != semester && (kind != AcademicKind.GRADES || model.gradeSemesterChanged())) selectedSemester = term.id }) }
                         }
                     }
-                    if (kind == AcademicKind.GRADES) FilterChip(selected = allGrades, enabled = !reading.loading, modifier = Modifier.testTag("allGradesScope"), onClick = { if (!reading.loading) model.gradeScope(!allGrades) }, label = { Text("所有学期") })
+                    if (kind == AcademicKind.GRADES) FilterChip(selected = allGrades, enabled = !selectionLoading, modifier = Modifier.testTag("allGradesScope"), onClick = { if (!selectionLoading) model.gradeScope(!allGrades) }, label = { Text("所有学期") })
                 }
             }
             reading.error?.let { message ->
@@ -237,7 +238,7 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun SettingsScreen(state: UiState, onBack: () -> Unit, onCalibrate: () -> Unit, onRelogin: () -> Unit, onLogout: () -> Unit, onReminders: () -> Unit = {}, onWidgets: () -> Unit = {}, onWeekend: (Boolean) -> Unit = {}, onDiagnostics: (Boolean) -> Unit = {}, campus: CampusState = CampusState(), onAutoElectric: (Boolean) -> Unit = {}, update: UpdateUi = UpdateUi(), onCheckUpdates: () -> Unit = {}, onCheckinLocation: () -> Unit = {}, onUpdateChannel: (UpdateChannel) -> Unit = {}, onUpdateServer: (UpdateServer) -> Unit = {}, onUpdateRepository: (String) -> Unit = {}, onAutomaticUpdates: (Boolean) -> Unit = {}, announcements: AnnouncementViewModel? = null, onOpenAnnouncement: (com.xatune.app.data.ReceivedAnnouncement) -> Unit = {}, onAnnouncementHistory: () -> Unit = {}) {
+@Composable fun SettingsScreen(state: UiState, onBack: () -> Unit, onCalibrate: () -> Unit, onRelogin: () -> Unit, onLogout: () -> Unit, onReminders: () -> Unit = {}, onWidgets: () -> Unit = {}, onWeekend: (Boolean) -> Unit = {}, onDiagnostics: (Boolean) -> Unit = {}, campus: CampusState = CampusState(), onAutoElectric: (Boolean) -> Unit = {}, update: UpdateUi = UpdateUi(), onCheckUpdates: () -> Unit = {}, onCheckinLocation: () -> Unit = {}, onUpdateChannel: (UpdateChannel) -> Unit = {}, onUpdateServer: (UpdateServer) -> Unit = {}, onUpdateRepository: (String) -> Unit = {}, onAutomaticUpdates: (Boolean) -> Unit = {}, announcements: AnnouncementViewModel? = null, onOpenAnnouncement: (com.xatune.app.data.ReceivedAnnouncement) -> Unit = {}, onAnnouncementHistory: () -> Unit = {}, onReducedInformationUpdates: (Boolean) -> Unit = {}) {
     var confirmLogout by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -263,7 +264,11 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
             item { SectionHeading("课程表与校园") }
             item { ServiceRow("校准第一周日期", "按当前教学周修正本地课表", Icons.Default.EditCalendar, onClick = onCalibrate) }
             item { ToggleRow("显示周末", "在周视图中显示周六和周日", state.showWeekend, onWeekend, switchModifier = Modifier.testTag("weekendSetting")) }
+            item { SectionHeading("信息更新") }
+            item { SectionHeading("电费") }
             item { ToggleRow("每日自动刷新电费余额", "根据已绑定宿舍更新本机记录", campus.autoElectric, onAutoElectric, enabled = !campus.busy) }
+            item { SectionHeading("教务信息") }
+            item { ToggleRow("降低教务信息更新频率", "", state.reducedInformationUpdates, onReducedInformationUpdates, switchModifier = Modifier.testTag("reduceInformationUpdates")) }
             item { SectionHeading("提醒与桌面") }
             item { ServiceRow("提醒设置", "上课、考试与系统通知权限", Icons.Default.Notifications, onClick = onReminders) }
             item { ServiceRow("桌面小组件", "在桌面查看课程、电费和假期", Icons.Default.Widgets, onClick = onWidgets) }

@@ -3,6 +3,7 @@ package com.xatune.app.data
 import com.xatune.app.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
@@ -58,6 +59,7 @@ class TimetableRepository(val store: LocalStore, private val vault: SecretVault,
             AcademicKind.PLAN -> {
                 // Entering this screen must not burn CAS password attempts automatically.
                 val plan = network.plan()
+                coroutineContext.ensureActive()
                 val previous = store.academic(account, kind, "all")
                 var warning: String? = null
                 val catalog = previous?.catalog?.takeIf { it.isNotEmpty() && !forceCatalog } ?: try { network.catalog() } catch (e: Exception) {
@@ -68,6 +70,14 @@ class TimetableRepository(val store: LocalStore, private val vault: SecretVault,
                 AcademicSnapshot(plan = plan, catalog = catalog, catalogWarning = warning)
             }
         }
+        coroutineContext.ensureActive()
+        if (kind == AcademicKind.GRADES) {
+            val fingerprint = gradeFingerprint(snapshot.grades?.grades.orEmpty())
+            val previous = store.extra("academic.gradeFingerprint:$account:$scope", String::class.java)
+            if (previous?.let { it != fingerprint } ?: snapshot.grades?.grades.orEmpty().isNotEmpty()) store.extra("academic.pendingPlan:$account", true)
+            store.extra("academic.gradeFingerprint:$account:$scope", fingerprint)
+        }
+        if (kind == AcademicKind.PLAN && snapshot.plan?.sections?.isNotEmpty() == true) store.extra("academic.pendingPlan:$account", null)
         store.saveAcademic(account, kind, scope, snapshot)
         cookies.persist()
         snapshot

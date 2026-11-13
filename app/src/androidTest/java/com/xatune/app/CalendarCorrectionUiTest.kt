@@ -19,7 +19,7 @@ class CalendarCorrectionUiTest {
     private val app get() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as HelperApplication
     private val raw = SchoolCalendar("原始标题", "page", "fixture://calendar", "", "OCR", listOf(SemesterSpan("第一学期", "2026-09-01", "2027-01-20")), 42)
     @Before fun setup() = runBlocking {
-        check(BuildConfig.APPLICATION_ID.endsWith(".qa"))
+        wakeQaDevice()
         compose.runOnUiThread {
             compose.activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             compose.activity.setShowWhenLocked(true); compose.activity.setTurnScreenOn(true)

@@ -21,8 +21,8 @@ class GradeScopeUiTest {
     private lateinit var server: MockWebServer
     private lateinit var model: HelperViewModel
     @Before fun prepare() {
-        check(BuildConfig.APPLICATION_ID.endsWith(".qa"))
-        runBlocking { app.store.clear(); app.store.select("grade-fixture", "101", TableKind.STUDENT); app.store.semesters(listOf(Semester("101", "当前学期"), Semester("99", "历史学期"))) }
+        wakeQaDevice()
+        runBlocking { app.store.clear(); app.store.select("grade-fixture", "101", TableKind.STUDENT); app.store.semesters(listOf(Semester("101", "当前学期", java.time.LocalDate.now().minusWeeks(15).toString()), Semester("99", "历史学期"))) }
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {

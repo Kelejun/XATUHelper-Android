@@ -12,6 +12,7 @@ import java.time.LocalDate
 class ElectricUsageUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     @Test fun longPressAt250msReadsRechargeDragChangesDayAndReleaseClears() {
+        wakeQaDevice()
         compose.runOnUiThread { compose.activity.setShowWhenLocked(true); compose.activity.setTurnScreenOn(true); compose.activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
         val today = LocalDate.parse("2026-11-13")
         val points = listOf(ElectricUsage(today.minusDays(29), BigDecimal.ZERO, true), ElectricUsage(today, BigDecimal("1.25"), false))

@@ -6,13 +6,16 @@ import android.graphics.BitmapFactory
 import com.xatune.app.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.*
 import org.jsoup.Jsoup
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-class CampusRepository(private val context: Context, val store: LocalStore, private val session: TimetableRepository, private val pay: PayNetwork) {
+class CampusRepository(private val context: Context, val store: LocalStore, private val session: TimetableRepository, private val pay: PayNetwork, private val calendarDownload: ((String) -> ByteArray)? = null) {
+    private val calendarMutex = Mutex()
     suspend fun selectedDorm(account: String) = store.extra("dorm:$account", Dorm::class.java)
     suspend fun electricity(account: String): Electricity? = store.extra("electric:$account", Electricity::class.java)?.takeIf { it.dorm == selectedDorm(account) }
     suspend fun autoElectricity(account: String) = store.extra("autoElectric:$account", Boolean::class.javaObjectType) ?: true
@@ -40,6 +43,29 @@ class CampusRepository(private val context: Context, val store: LocalStore, priv
         store.extra(correctionKey(imageUrl), correction.takeUnless { it == CalendarCorrection.original(raw) })
         return applyCorrection(raw)
     }
+    private suspend fun rememberCalendar(raw: SchoolCalendar) {
+        val history = store.extra("schoolCalendar.history", Array<SchoolCalendar>::class.java).orEmpty().filter { it.imageUrl != raw.imageUrl } + raw
+        store.extra("schoolCalendar.history", history)
+    }
+    suspend fun scheduleCalendars(): List<SchoolCalendar> {
+        val current = rawCalendar()
+        val history = store.extra("schoolCalendar.history", Array<SchoolCalendar>::class.java).orEmpty().filter { it.imageUrl != current?.imageUrl }.toList() + listOfNotNull(current)
+        return history.map { applyCorrection(it) }
+    }
+    suspend fun shouldRefreshCalendar(): Boolean {
+        if (store.extra("reduceAcademicRefreshFrequency", Boolean::class.javaObjectType) == true) return true
+        val pending = store.extra("academic.calendar.targetYear", Int::class.javaObjectType)
+        val target = InformationRefreshPolicy.calendarTarget(calendar()?.semesters.orEmpty().mapNotNull { InformationRefreshPolicy.date(it.start) }, pending, java.time.LocalDate.now())
+        if (target == null) { store.extra("academic.calendar.targetYear", null); return false }
+        if (target > 0) store.extra("academic.calendar.targetYear", target)
+        return InformationRefreshPolicy.needsDailyRefresh(store.extra("academic.calendar.lastAttempt", Long::class.javaObjectType))
+    }
+    suspend fun automaticCalendar(): SchoolCalendar? = calendarMutex.withLock {
+        if (!shouldRefreshCalendar()) return@withLock calendar()
+        if (store.extra("reduceAcademicRefreshFrequency", Boolean::class.javaObjectType) == true) return@withLock calendar()
+        store.extra("academic.calendar.lastAttempt", System.currentTimeMillis())
+        refreshCalendarLocked(false)
+    }
     suspend fun projects(account: String) = session.withSession(account) { pay.projects() }
     suspend fun areas(account: String, project: String) = session.withSession(account) { pay.areas(project) }
     suspend fun buildings(account: String, project: String, area: String) = session.withSession(account) { pay.buildings(project, area) }
@@ -57,7 +83,7 @@ class CampusRepository(private val context: Context, val store: LocalStore, priv
         if (url.scheme != "https" || url.host != "jwcw.xatu.edu.cn") throw java.io.IOException("校历链接不属于教务处站点")
         chain.proceed(chain.request())
     }.build()
-    private fun download(url: String): ByteArray = calendarClient.newCall(Request.Builder().url(url).header("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36").header("Accept", "text/html,image/*;q=0.9,*/*;q=0.8").build()).execute().use {
+    private fun download(url: String): ByteArray = calendarDownload?.invoke(url) ?: calendarClient.newCall(Request.Builder().url(url).header("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36").header("Accept", "text/html,image/*;q=0.9,*/*;q=0.8").build()).execute().use {
         if (!it.isSuccessful) throw java.io.IOException("教务处返回 HTTP ${it.code}，请在校园网下重试")
         val body = it.body ?: throw java.io.IOException("教务处未返回内容")
         if (body.contentLength() > 20_000_000) throw java.io.IOException("校历图片过大")
@@ -74,19 +100,28 @@ class CampusRepository(private val context: Context, val store: LocalStore, priv
     var sample = 1; while (bounds.outWidth / sample > 4096 || bounds.outHeight / sample > 4096 || bounds.outWidth.toLong() * bounds.outHeight / sample / sample > 12_000_000) sample *= 2
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: throw ParseFailure("无法打开校历原图")
     }
-    suspend fun refreshCalendar(): SchoolCalendar = withContext(Dispatchers.IO) {
+    suspend fun refreshCalendar(): SchoolCalendar = calendarMutex.withLock { refreshCalendarLocked(true) }
+    private suspend fun refreshCalendarLocked(force: Boolean): SchoolCalendar = withContext(Dispatchers.IO) {
         val page = CalendarParser.latest(html(CalendarParser.index))
         val document = html(page)
         val image = CalendarParser.image(document, page)
+        val cached = rawCalendar()
+        cached?.let { rememberCalendar(it) }
+        if (!force && cached?.imageUrl == image && cached.recognitionVersion >= 1 && applyCorrection(cached).semesters.size >= 2) return@withContext applyCorrection(cached)
         val bytes = download(image)
         val bitmap = decodeCalendar(bytes)
-        val recognized = try { CalendarOcr.read(bitmap) } catch (_: Exception) { CalendarOcr.Result("", emptyList(), null) } finally { bitmap.recycle() }
+        val recognized = try { CalendarOcr.read(bitmap) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { CalendarOcr.Result("", emptyList(), null) } finally { bitmap.recycle() }
         val name = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         val file = File(context.filesDir, "calendar-$name.image")
         android.util.AtomicFile(file).let { atomic -> val stream = atomic.startWrite(); try { stream.write(bytes); atomic.finishWrite(stream) } catch (e: Exception) { atomic.failWrite(stream); throw e } }
         val result = SchoolCalendar(Jsoup.parse(document).title().substringBefore("-西安工业"), page, image, file.absolutePath, recognized.text, recognized.semesters, System.currentTimeMillis(), recognized.coverageEnd, 1)
         store.extra("schoolCalendar", result)
-        context.filesDir.listFiles()?.filter { it.name.startsWith("calendar-") && it != file }?.forEach { it.delete() }
+        rememberCalendar(result)
+        val target = store.extra("academic.calendar.targetYear", Int::class.javaObjectType)
+        val corrected = applyCorrection(result)
+        if (target != null && corrected.semesters.size >= 2 && corrected.semesters.minOf { it.start }.take(4).toIntOrNull()?.let { it >= target } == true) store.extra("academic.calendar.targetYear", null)
+        val retained = store.extra("schoolCalendar.history", Array<SchoolCalendar>::class.java).orEmpty().map { it.imagePath }.toSet()
+        context.filesDir.listFiles()?.filter { it.name.startsWith("calendar-") && it.absolutePath !in retained }?.forEach { it.delete() }
         applyCorrection(result)
     }
 }

@@ -17,6 +17,7 @@ class MainActivity : ComponentActivity() {
         intent.removeExtra("open_page")
     }
     override fun onStart() { super.onStart(); if (::helperModel.isInitialized) helperModel.checkUpdates() }
+    override fun onStop() { if (::helperModel.isInitialized) helperModel.pauseAutomaticUpdates(); super.onStop() }
     override fun onResume() { super.onResume(); if (::helperModel.isInitialized) helperModel.resume() }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 class AcademicSemesterRefreshTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     @Test fun toolbarAndPullRefreshKeepHistoricalPageSemester() {
-        check(BuildConfig.APPLICATION_ID.endsWith(".qa"))
+        wakeQaDevice()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val app = context.applicationContext as HelperApplication
         val store = app.store

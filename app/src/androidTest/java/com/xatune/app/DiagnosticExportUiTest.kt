@@ -15,7 +15,7 @@ class DiagnosticExportUiTest {
     private fun shell(command: String) = automation.executeShellCommand(command).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().readText() }
     private fun nodes(node: AccessibilityNodeInfo?): List<AccessibilityNodeInfo> = if (node == null) emptyList() else listOf(node) + (0 until node.childCount).flatMap { nodes(node.getChild(it)) }
     @Test fun savesUtf8SnapshotThroughSystemPickerAndCancelsCleanly() {
-        check(BuildConfig.APPLICATION_ID.endsWith(".qa"))
+        wakeQaDevice()
         compose.runOnUiThread {
             compose.activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             compose.activity.setShowWhenLocked(true); compose.activity.setTurnScreenOn(true)
