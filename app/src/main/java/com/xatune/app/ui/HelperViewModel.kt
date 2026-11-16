@@ -16,7 +16,7 @@ data class UiState(
     val academic: Map<String, AcademicUi> = emptyMap(), val notice: AcademicNotice? = null, val allGrades: Boolean = false,
     val reducedInformationUpdates: Boolean = false, val gradeRevision: Int = 0, val showWeekend: Boolean = true, val showDiagnostics: Boolean = false, val currentSemester: String = "",
     val edits: List<TimetableEdit> = emptyList(), val pendingEdits: Map<String, List<Int>> = emptyMap(), val baseTable: Timetable? = null,
-    val starting: Boolean = true, val account: String = "", val table: Timetable? = null,
+    val currentTable: Timetable? = null, val starting: Boolean = true, val account: String = "", val table: Timetable? = null,
     val semesters: List<Semester> = emptyList(), val selectedSemester: String = "", val kind: TableKind = TableKind.STUDENT,
     val week: Int = 1, val busy: Boolean = false, val error: String? = null,
     val webAccount: String = "", val needsLogin: Boolean = false, val showWebLogin: Boolean = false, val demo: Boolean = false
@@ -66,7 +66,7 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
         val current = repository.store.baseTable(s.account, s.currentSemester, TableKind.STUDENT)
         return InformationRefreshPolicy.terms(campusRepository?.scheduleCalendars().orEmpty(), repository.store.semesters(), current?.monday ?: repository.store.monday(s.account, s.currentSemester))
     }
-    private suspend fun informationStale(kind: InformationKind, at: Long?) = InformationRefreshPolicy.stale(kind, at, state.value.reducedInformationUpdates, refreshTerms())
+    private suspend fun informationStale(kind: InformationKind, at: Long?) = InformationRefreshPolicy.stale(kind, if (kind == InformationKind.PLAN && state.value.academic[academicKey(AcademicKind.PLAN, "all")]?.data?.plan?.sections?.isEmpty() == true) null else at, state.value.reducedInformationUpdates, refreshTerms())
     private fun startAutomaticUpdates() {
         val s = state.value
         if (!automaticForeground || campusRepository == null || s.account.isBlank() || s.demo || automaticJob?.isActive == true) return
@@ -78,11 +78,11 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
                 val gradeScope = if (s.allGrades) "all" else term
                 suspend fun at(kind: InformationKind): Long? = when (kind) {
                     InformationKind.TIMETABLE -> repository.store.baseTable(account, term, TableKind.STUDENT)?.fetchedAt
-                    else -> repository.store.academic(account, AcademicKind.valueOf(kind.name), if (kind == InformationKind.PLAN) "all" else if (kind == InformationKind.GRADES) gradeScope else term)?.fetchedAt
+                    else -> repository.store.academic(account, AcademicKind.valueOf(kind.name), if (kind == InformationKind.PLAN) "all" else if (kind == InformationKind.GRADES) gradeScope else term)?.takeUnless { kind == InformationKind.PLAN && it.plan?.sections.isNullOrEmpty() }?.fetchedAt
                 }
                 val kinds = if (s.reducedInformationUpdates) {
                     InformationKind.entries.filter { informationStale(it, at(it)) }.maxByOrNull { kind -> at(kind)?.let { (System.currentTimeMillis() - it).toDouble() / (kind.hours * 3_600_000) } ?: Double.MAX_VALUE }?.let(::listOf).orEmpty()
-                } else listOf(InformationKind.TIMETABLE, InformationKind.GRADES, InformationKind.EXAMS)
+                } else listOf(InformationKind.TIMETABLE, InformationKind.GRADES, InformationKind.EXAMS, InformationKind.PLAN)
                 for (kind in kinds) {
                     ensureActive()
                     if (state.value.account != account || state.value.demo) return@launch
@@ -95,11 +95,12 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
                             val table = repository.refresh(account, term, TableKind.STUDENT)
                             if (state.value.account != account) return@launch
                             if (before.selectedSemester == term && before.kind == TableKind.STUDENT) accept(table)
-                            else { repository.store.select(account, before.selectedSemester, before.kind); mutable.update { it.copy(semesters = repository.store.semesters()) }; syncSystems() }
+                            else { warmCurrentTable(); repository.store.select(account, before.selectedSemester, before.kind); mutable.update { it.copy(semesters = repository.store.semesters()) }; syncSystems() }
                         } catch (e: CancellationException) { throw e } catch (_: Exception) { }
                     } else {
                         val academicKind = AcademicKind.valueOf(kind.name)
                         val scope = if (kind == InformationKind.PLAN) "all" else if (kind == InformationKind.GRADES) gradeScope else term
+                        if (kind == InformationKind.PLAN) planAttemptedInFlow = true
                         loadAcademic(academicKind, scope)
                         academicJobs[academicKey(academicKind, scope)]?.join()
                     }
@@ -127,6 +128,14 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
         if (automaticFlow || planSyncJob?.isActive == true) return
         planSyncJob = viewModelScope.launch { syncPendingPlan() }
     }
+    private var uiEpoch = 0L
+    private fun resetSessionWork() {
+        uiEpoch++
+        repository.invalidateSession()
+        request?.cancel()
+        cancelAcademic()
+        mutable.update { it.copy(busy = false, notice = null) }
+    }
     private var request: Job? = null
     private val academicJobs = mutableMapOf<String, Job>()
     private val automaticAcademicKeys = mutableSetOf<String>()
@@ -149,12 +158,14 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
                     reducedInformationUpdates = repository.store.extra("reduceAcademicRefreshFrequency", Boolean::class.javaObjectType) ?: false,
                     showWeekend = repository.store.extra("showWeekend", Boolean::class.javaObjectType) ?: true,
                     showDiagnostics = repository.store.extra("showDiagnostics", Boolean::class.javaObjectType) ?: false)
+                warmCurrentTable()
                 warmExams()
                 campus?.load()
                 runCatching { syncSystems() }
                 // Cache first. Avoid login requests on every screen or process restart.
                 startAutomaticUpdates()
-            } catch (e: Exception) { mutable.update { it.copy(starting = false, error = message(e)) } }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { mutable.update { it.copy(starting = false, error = message(e)) } }
         }
     }
     private fun message(e: Exception) = when (e) {
@@ -166,12 +177,13 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
     private fun action(block: suspend () -> Unit) {
         if (mutable.value.busy) return
         mutable.update { it.copy(busy = true, error = null) }
+        val version = uiEpoch
         request = viewModelScope.launch {
             try { block() } catch (e: CancellationException) { throw e }
-            catch (e: WebLoginRequired) { mutable.update { it.copy(showWebLogin = true, webAccount = it.webAccount.ifBlank { it.account }) } }
-            catch (e: SessionExpired) { mutable.update { it.copy(needsLogin = true, error = message(e)) } }
-            catch (e: Exception) { mutable.update { it.copy(error = message(e)) } }
-            finally { mutable.update { it.copy(busy = false) } }
+            catch (e: WebLoginRequired) { if (uiEpoch == version) mutable.update { it.copy(showWebLogin = true, webAccount = it.webAccount.ifBlank { it.account }) } }
+            catch (e: SessionExpired) { if (uiEpoch == version) mutable.update { it.copy(needsLogin = true, error = message(e)) } }
+            catch (e: Exception) { if (uiEpoch == version) mutable.update { it.copy(error = message(e)) } }
+            finally { if (uiEpoch == version) mutable.update { it.copy(busy = false) } }
         }
     }
     private fun cancelAcademic() {
@@ -185,14 +197,14 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
     }
     fun login(account: String, password: String) {
         if (account.isBlank() || password.isEmpty()) { mutable.update { it.copy(error = "请填写学号和密码") }; return }
-        cancelAcademic()
+        resetSessionWork()
         mutable.update { it.copy(webAccount = account.trim()) }
         action { accept(repository.login(account.trim(), password)) }
     }
     private fun parseMonday(text: String): LocalDate? = if (text.isBlank()) null else runCatching { LocalDate.parse(text) }.getOrElse { throw IllegalArgumentException("日期格式应为 yyyy-MM-dd，例如 2026-09-07") }
     fun openWeb(account: String) {
         if (account.isBlank()) { mutable.update { it.copy(error = "请先填写学号，用于区分本地课表") }; return }
-        cancelAcademic()
+        resetSessionWork()
         action { repository.beginWebLogin(); mutable.update { it.copy(webAccount = account.trim(), showWebLogin = true, error = null) } }
     }
     fun finishWeb() {
@@ -202,13 +214,16 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
     fun closeWeb() { mutable.update { it.copy(showWebLogin = false) } }
     fun webError(message: String) { mutable.update { it.copy(error = message) } }
     private suspend fun accept(incoming: Timetable) {
+        currentCoroutineContext().ensureActive()
         val base = repository.store.baseTable(incoming.account, incoming.semester.id, incoming.kind) ?: incoming
         val edits = if (base.kind == TableKind.STUDENT) repository.store.edits(base.account, base.semester.id) else emptyList()
         val edited = editTimetable(base, edits)
         val table = edited.table
         val semesters = repository.store.semesters()
         val currentSemester = repository.store.currentSemester(table.account)
-        mutable.update { it.copy(allGrades = if (it.account == table.account) it.allGrades else false, academic = if (it.account == table.account) it.academic else emptyMap(), account = table.account, currentSemester = currentSemester, webAccount = table.account, table = table, baseTable = base, edits = edits, pendingEdits = edited.pending, semesters = semesters, selectedSemester = table.semester.id, kind = table.kind, needsLogin = false, demo = BuildConfig.DEMO_ENABLED && table.account == "__demo__", week = weekOf(LocalDate.parse(table.monday), schoolToday())) }
+        currentCoroutineContext().ensureActive()
+        mutable.update { it.copy(currentTable = if (it.account == table.account && it.currentSemester == currentSemester) it.currentTable else null, allGrades = if (it.account == table.account) it.allGrades else false, academic = if (it.account == table.account) it.academic else emptyMap(), account = table.account, currentSemester = currentSemester, webAccount = table.account, table = table, baseTable = base, edits = edits, pendingEdits = edited.pending, semesters = semesters, selectedSemester = table.semester.id, kind = table.kind, needsLogin = false, demo = BuildConfig.DEMO_ENABLED && table.account == "__demo__", week = weekOf(LocalDate.parse(table.monday), schoolToday())) }
+        warmCurrentTable()
         warmExams()
         campus?.load()
         runCatching { syncSystems() }
@@ -265,19 +280,30 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
         accept(base)
         mutable.update { it.copy(week = s.week) }
     } }
-    fun logout() { action {
-        academicJobs.values.forEach { it.cancel() }; academicJobs.clear()
-        repository.logout(); mutable.value = UiState(starting = false); campus?.load(); runCatching { syncSystems() }
-    } }
+    fun logout() {
+        resetSessionWork()
+        mutable.value = UiState(starting = false)
+        action {
+            repository.logout { campus?.load(); runCatching { syncSystems() } }
+        }
+    }
     fun dismissNotice() { mutable.update { it.copy(notice = null) } }
+    private suspend fun warmCurrentTable() {
+        val s = state.value
+        val current = repository.store.table(s.account, s.currentSemester, TableKind.STUDENT)
+        currentCoroutineContext().ensureActive()
+        mutable.update { if (it.account == s.account && it.currentSemester == s.currentSemester) it.copy(currentTable = current) else it }
+    }
     private suspend fun warmExams() {
         val s = state.value
         repository.store.academic(s.account, AcademicKind.EXAMS, s.currentSemester)?.let { snapshot ->
+            currentCoroutineContext().ensureActive()
             mutable.update { if (it.account == s.account && it.currentSemester == s.currentSemester) it.copy(academic = it.academic + (academicKey(AcademicKind.EXAMS, s.currentSemester) to AcademicUi(snapshot))) else it }
         }
     }
     fun loadAcademic(kind: AcademicKind, scope: String, force: Boolean = false, forceCatalog: Boolean = force) {
         val account = state.value.account
+        val version = uiEpoch
         val key = academicKey(kind, scope)
         if (account.isBlank() || academicJobs[key]?.isActive == true) return
         val changedRange = kind == AcademicKind.GRADES && gradeRefreshPending
@@ -285,31 +311,33 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
         if (!force && !changedRange && !automaticForeground) { automaticAcademicKeys.remove(key); return }
         if (kind == AcademicKind.GRADES) gradeRefreshPending = false
         academicJobs[key] = viewModelScope.launch {
-            fun publish(reading: AcademicUi) { mutable.update { if (it.account == account) it.copy(academic = it.academic + (key to reading)) else it } }
+            fun publish(reading: AcademicUi) { mutable.update { if (it.account == account && uiEpoch == version) it.copy(academic = it.academic + (key to reading)) else it } }
             val cached = try {
                 if (changedRange && !state.value.demo) null
-                else state.value.academic[key]?.data
+                else state.value.academic[key]?.data?.takeIf { it.account == account && it.scope == scope || state.value.demo }
                     ?: if (state.value.demo && kind == AcademicKind.GRADES) state.value.academic.values.firstNotNullOfOrNull { it.data?.takeIf { snapshot -> snapshot.grades != null } } ?: demoAcademic(kind)
                     else repository.store.academic(account, kind, scope)
             }
                 catch (e: CancellationException) { throw e }
                 catch (e: Exception) { publish(AcademicUi(error = message(e))); return@launch }
             publish(AcademicUi(cached))
-            if (!force && !changedRange && !state.value.demo && !informationStale(InformationKind.valueOf(kind.name), cached?.fetchedAt)) return@launch
+            if (!force && !changedRange && !state.value.demo && !informationStale(InformationKind.valueOf(kind.name), cached?.takeUnless { kind == AcademicKind.PLAN && it.plan?.sections.isNullOrEmpty() }?.fetchedAt)) return@launch
             if (state.value.demo && cached != null) return@launch
             publish(AcademicUi(cached, loading = true))
             try {
                 if (!force && !changedRange && !state.value.demo) {
                     InformationRefreshGate.waitForSlot()
-                    if (state.value.account != account || !informationStale(InformationKind.valueOf(kind.name), cached?.fetchedAt)) { publish(AcademicUi(cached)); return@launch }
+                    if (state.value.account != account || !informationStale(InformationKind.valueOf(kind.name), cached?.takeUnless { kind == AcademicKind.PLAN && it.plan?.sections.isNullOrEmpty() }?.fetchedAt)) { publish(AcademicUi(cached)); return@launch }
                 }
                 val snapshot = if (state.value.demo) demoAcademic(kind) else repository.refreshAcademic(account, kind, scope, forceCatalog = forceCatalog)
                 if (state.value.demo) repository.store.saveAcademic(account, kind, scope, snapshot)
+                ensureActive()
+                if (uiEpoch != version) return@launch
                 val notice = academicNotice(kind, scope, cached, snapshot)
                 publish(AcademicUi(snapshot))
                 if (kind == AcademicKind.GRADES && !state.value.demo) planAfterGrades()
                 runCatching { syncSystems() }
-                if (notice != null && state.value.account == account) mutable.update { it.copy(notice = notice) }
+                if (notice != null && state.value.account == account && uiEpoch == version) mutable.update { it.copy(notice = notice) }
             } catch (e: CancellationException) { publish(AcademicUi(cached)); throw e }
             catch (e: Exception) { publish(AcademicUi(cached, error = message(e), needsLogin = e is SessionExpired || e is WebLoginRequired)) }
             finally { automaticAcademicKeys.remove(key) }
@@ -340,6 +368,7 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
                 Triple("大学物理", 4, 1), Triple("线性代数", 5, 3), Triple("体育", 2, 7), Triple("实验课程", 5, 9), Triple("课程讨论", 7, 5)
             ).flatMapIndexed { index, (name, day, period) -> (period..period + 1).map { Course("DEMO$index", name, "示例教师", "教${index % 3 + 1}-${100 + index}", day, it, (1..18).toList()) } }
             val table = Timetable("__demo__", semester, TableKind.STUDENT, courses, 12, start.toString(), System.currentTimeMillis())
+            repository.store.extra("current:${table.account}", semester.id)
             repository.store.save(table); repository.store.semesters(listOf(semester)); repository.store.select(table.account, semester.id, table.kind)
             accept(table)
         }

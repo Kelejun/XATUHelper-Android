@@ -15,7 +15,7 @@ class AcademicTest {
     private val plan = """<div>姓名:示例 专业/专业方向:计算机 GPA:3.8 要求学分/实修学分:160/96</div><table><tr class='darkColumn'><td colspan='3'>一 基础课程</td><td>13</td><td>9</td></tr><tr class='darkColumn'><td colspan='3'>(一) 学科基础</td><td>13</td><td>9</td></tr><tr class='darkColumn'><td colspan='3'>1 数学组</td><td>5</td><td>5</td></tr><tr><td>1</td><td>MATH01</td><td>高等数学</td><td>5</td><td>5</td><td>88</td><td>是</td><td></td></tr></table>"""
     @Test fun datesAndClockInSeparateColumnsAreCombined() {
         val item = AcademicParser.exams(exam).single()
-        assertTrue(item.time.contains("2027/1/12")); assertTrue(item.time.contains("09:00"))
+        assertTrue(item.time.contains("2027-01-12")); assertTrue(item.time.contains("09:00"))
         assertEquals(LocalDate.parse("2027-01-12"), item.date())
         assertEquals("12", item.seat)
     }

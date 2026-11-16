@@ -141,11 +141,17 @@ class CampusPlatformTest {
             }
             instrumentation.uiAutomation.dropShellPermissionIdentity()
             SystemCoordinator.synchronize(context)
+            val source = store.table(account, "current", TableKind.STUDENT)!!
+            val anchor = schoolToday().atTime(12, 0).atZone(SchoolZone)
+            CampusWidgets.publish(context, account, source, anchor, scheduleRefresh = false)
             fun bodies(): List<String> { var result = emptyList<String>(); instrumentation.runOnMainSync { result = views.values.map { it.findViewById<android.widget.TextView>(R.id.widget_body)?.text?.toString().orEmpty() } }; return result }
             val until = System.currentTimeMillis()+8000
-            while (System.currentTimeMillis()<until && bodies().any(String::isBlank)) Thread.sleep(100)
+            while (System.currentTimeMillis()<until && !(bodies().any { "42.00" in it } && bodies().any { "组件测试课程" in it })) {
+                CampusWidgets.publish(context, account, source, anchor, scheduleRefresh = false)
+                Thread.sleep(200)
+            }
             assertTrue(bodies().any { "42.00" in it })
-            assertTrue(bodies().any { "组件测试课程" in it })
+            assertTrue("Widget bodies: ${bodies()}; snapshot: ${store.extra("widget.courseSnapshot", WidgetCourseSnapshot::class.java)}", bodies().any { "组件测试课程" in it })
             val courseId = views.keys.first()
             instrumentation.runOnMainSync { views.getValue(courseId).findViewById<android.widget.TextView>(R.id.widget_action).performClick() }
             val toggled = System.currentTimeMillis()+5000
@@ -161,6 +167,14 @@ class CampusPlatformTest {
                 root.draw(Canvas(bitmap))
                 java.io.File(context.getExternalFilesDir(null),"widgets.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }; bitmap.recycle()
             }
+            CampusWidgets.publish(context, account, source, anchor.plusDays(1), scheduleRefresh = false)
+            val advanced = System.currentTimeMillis() + 5000
+            while (System.currentTimeMillis() < advanced && bodies().first().contains("组件测试课程")) Thread.sleep(100)
+            assertFalse(bodies().first().contains("组件测试课程"))
+            CampusWidgets.publish(context, account, source, anchor.plusDays(14), scheduleRefresh = false)
+            val expired = System.currentTimeMillis() + 5000
+            while (System.currentTimeMillis() < expired && !bodies().first().contains("请先同步")) Thread.sleep(100)
+            assertTrue(bodies().first().contains("请先同步"))
             app.repository.logout(); SystemCoordinator.synchronize(context)
             val cleared = System.currentTimeMillis()+5000
             while (System.currentTimeMillis()<cleared && bodies().any { !it.contains("登录后") }) Thread.sleep(100)

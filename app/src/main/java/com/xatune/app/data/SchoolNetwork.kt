@@ -108,6 +108,7 @@ object CasCrypto {
 }
 
 class SchoolNetwork(cookies: CookieJar, private val base: String = SchoolUrls.eams, private val loginUrl: String = SchoolUrls.login) {
+    @Volatile internal var sessionCheck: () -> Unit = {}
     private val client = OkHttpClient.Builder().cookieJar(cookies).connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS).callTimeout(45, TimeUnit.SECONDS)
         .addNetworkInterceptor(CasHttps)
@@ -117,12 +118,15 @@ class SchoolNetwork(cookies: CookieJar, private val base: String = SchoolUrls.ea
             chain.proceed(request.newBuilder().header("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36 XATUHelper/0.1").build())
         }.build()
     private fun request(url: String, form: Map<String, String>? = null, auth: Boolean = true): Pair<String, String> {
+        sessionCheck()
         val builder = Request.Builder().url(CasHttps.upgrade(url))
         form?.let { values -> builder.post(FormBody.Builder().apply { values.forEach { (k, v) -> add(k, v) } }.build()) }
         val response = try { client.newCall(builder.build()).execute() } catch (e: java.net.ProtocolException) { throw SessionExpired() }
         response.use {
+            sessionCheck()
             if (!it.isSuccessful) throw java.io.IOException("学校服务返回 HTTP ${it.code}，请稍后重试")
             val html = it.body?.string() ?: throw ParseFailure("学校服务没有返回内容")
+            sessionCheck()
             val finalUrl = it.request.url.toString()
             if (auth && (it.request.url.host != base.toHttpUrl().host || EamsParser.isLogin(html))) throw SessionExpired()
             return html to finalUrl

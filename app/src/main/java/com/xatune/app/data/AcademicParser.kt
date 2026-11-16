@@ -38,6 +38,7 @@ object AcademicParser {
             if (!Regex("""\d{1,2}:\d{2}""").containsMatchIn(time)) {
                 row.firstOrNull { Regex("""\d{1,2}:\d{2}""").containsMatchIn(it) }?.let { time = "$time $it".trim() }
             }
+            time = normalizedExamTime(time)
             val room = at(col("考场", "教室", "地点"))
             if (time.isBlank() && room.isBlank()) return@mapNotNull null
             val code = at(col("课程序号", "课程代码", "课程号"))

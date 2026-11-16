@@ -42,7 +42,7 @@ class InformationRefreshPolicyTest {
             assertTrue(InformationRefreshPolicy.stale(kind, boundary, true, terms, current))
             assertFalse(InformationRefreshPolicy.stale(kind, boundary + 1, true, terms, current))
         }
-        assertFalse(InformationRefreshPolicy.stale(InformationKind.PLAN, null, false, terms, current))
+        assertTrue(InformationRefreshPolicy.stale(InformationKind.PLAN, null, false, terms, current))
         assertTrue(InformationRefreshPolicy.stale(InformationKind.GRADES, null, false, terms, current))
         assertFalse(InformationRefreshPolicy.stale(InformationKind.EXAMS, null, false, terms, now("2027-01-22T12:00:00+08:00")))
     }

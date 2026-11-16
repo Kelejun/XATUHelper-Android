@@ -81,14 +81,16 @@ class CampusController(private val repository: CampusRepository, private val sco
         val s = state.value
         val dorm = Dorm(s.project ?: return@action, s.area ?: return@action, s.building ?: return@action, s.room ?: return@action)
         repository.saveDorm(account, dorm)
-        mutable.update { it.copy(dorm = dorm, electric = null, selecting = false, history = emptyList()) }
+        mutable.update { it.copy(dorm = dorm, electric = null, selecting = false, history = repository.store.history(account, dorm.key)) }
+        sync()
         refreshNow(account)
     }
     private suspend fun refreshNow(account: String) {
         val dorm = repository.selectedDorm(account) ?: return
         val value = if (account == "__demo__") Electricity(dorm, "68.50", System.currentTimeMillis()).also { repository.store.extra("electric:$account", it); repository.store.record(account, it) } else repository.refreshElectricity(account)
         val history = repository.store.history(account, dorm.key)
-        if (state.value.account == account) mutable.update { it.copy(electric = value, history = history) }
+        currentCoroutineContext().ensureActive()
+        if (state.value.account == account && state.value.dorm == dorm) mutable.update { it.copy(electric = value, history = history) }
         sync()
     }
     fun refreshElectricity() = action(::refreshNow)

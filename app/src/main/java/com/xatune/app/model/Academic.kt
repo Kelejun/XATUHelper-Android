@@ -47,6 +47,13 @@ data class CourseInfo(val code: String, val name: String, val nature: String, va
 data class AcademicSnapshot(
     val fetchedAt: Long = System.currentTimeMillis(), val exams: List<Exam> = emptyList(),
     val grades: GradePage? = null, val plan: StudyPlan? = null, val catalog: List<CourseInfo> = emptyList(),
-    val catalogWarning: String? = null
+    val catalogWarning: String? = null, val account: String? = null, val scope: String? = null
 )
 fun gradeChanges(previous: List<Grade>, current: List<Grade>): Int = changedGrades(previous, current).size
+
+fun normalizedExamTime(raw: String): String {
+    val match = Regex("""(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?""").find(raw) ?: return raw.trim()
+    val date = runCatching { LocalDate.of(match.groupValues[1].toInt(), match.groupValues[2].toInt(), match.groupValues[3].toInt()) }.getOrNull() ?: return raw.trim()
+    val rest = raw.removeRange(match.range).trim().replace(Regex("""\s+"""), " ")
+    return "$date $rest".trim()
+}

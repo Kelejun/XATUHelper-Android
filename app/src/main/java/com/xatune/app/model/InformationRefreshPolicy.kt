@@ -29,7 +29,7 @@ object InformationRefreshPolicy {
     fun vacation(terms: List<RefreshTerm>, today: LocalDate): Boolean = terms.lastOrNull { it.start <= today }?.end?.let { today > it } ?: false
     fun stale(kind: InformationKind, at: Long?, reduced: Boolean, terms: List<RefreshTerm>, now: ZonedDateTime = ZonedDateTime.now()): Boolean {
         if (reduced) return at == null || now.toInstant().toEpochMilli() - at >= kind.hours * 3_600_000
-        val enabled = when (kind) { InformationKind.PLAN -> false; InformationKind.GRADES -> gradesEnabled(terms, now.toLocalDate()); InformationKind.EXAMS -> !vacation(terms, now.toLocalDate()); else -> true }
+        val enabled = when (kind) { InformationKind.PLAN -> at == null; InformationKind.GRADES -> gradesEnabled(terms, now.toLocalDate()); InformationKind.EXAMS -> !vacation(terms, now.toLocalDate()); else -> true }
         return enabled && needsDailyRefresh(at, now)
     }
     // null waits, zero bootstraps missing dates, positive values persist the target school year.

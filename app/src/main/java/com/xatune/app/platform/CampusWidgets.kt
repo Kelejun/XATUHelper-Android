@@ -1,6 +1,7 @@
 package com.xatune.app.platform
 
 import android.app.PendingIntent
+import android.app.AlarmManager
 import android.appwidget.*
 import android.content.*
 import android.widget.RemoteViews
@@ -11,11 +12,13 @@ import java.time.*
 import java.time.temporal.ChronoUnit
 
 object CampusWidgets {
-    suspend fun publish(context: Context, account: String, table: Timetable?) {
+    suspend fun publish(context: Context, account: String, table: Timetable?, now: ZonedDateTime = ZonedDateTime.now(SchoolZone), scheduleRefresh: Boolean = true) {
         val app = context.applicationContext as HelperApplication
         val manager = AppWidgetManager.getInstance(context)
         val options = context.getSharedPreferences("widget_options", Context.MODE_PRIVATE)
-        val now = ZonedDateTime.now(SchoolZone)
+        val previous = app.store.extra("widget.courseSnapshot", WidgetCourseSnapshot::class.java)
+        val snapshot = if (previous?.account == account && previous.source == widgetSource(table)) previous else widgetSnapshot(account, table, now.toLocalDate()).also { app.store.extra("widget.courseSnapshot", it) }
+        if (scheduleRefresh) schedule(context, snapshot, now)
         for ((type, provider) in listOf("course" to CourseWidget::class.java, "electricity" to ElectricityWidget::class.java, "holiday" to HolidayWidget::class.java)) {
             for (id in manager.getAppWidgetIds(ComponentName(context, provider))) {
                 val view = RemoteViews(context.packageName, R.layout.widget_campus)
@@ -27,19 +30,20 @@ object CampusWidgets {
                 if (account.isNotBlank()) when (type) {
                     "course" -> {
                         val auto = options.getBoolean("tomorrow:$id", false)
-                        val today = coursesOn(table, now.toLocalDate()).filter { LocalTime.parse(Periods.range(it).substringAfter('–')) > now.toLocalTime() }
+                        val today = snapshot.day(now.toLocalDate())?.courses.orEmpty().filter { LocalTime.parse(Periods.range(it).substringAfter('–')) > now.toLocalTime() }
                         val tomorrow = auto && today.isEmpty()
-                        val displayed = if (tomorrow) coursesOn(table, now.toLocalDate().plusDays(1)) else today
+                        val displayed = if (tomorrow) snapshot.day(now.toLocalDate().plusDays(1))?.courses.orEmpty() else today
                         title = if (tomorrow) "明日课程" else "今日课程"
-                        body = if (table == null) "请先同步当前学期的学生课表" else displayed.take(3).joinToString("\n") { "${Periods.range(it)} ${it.name}\n${it.room}" }.ifBlank { if (tomorrow) "明天没有课程安排" else "今天的课程已结束或暂无课程" }
+                        body = if (snapshot.day(now.toLocalDate()) == null) "请先同步当前学期的学生课表" else displayed.take(3).joinToString("\n") { "${Periods.range(it)} ${it.name}\n${it.room}" }.ifBlank { if (tomorrow) "明天没有课程安排" else "今天的课程已结束或暂无课程" }
                         val displayedDate = if (tomorrow) now.toLocalDate().plusDays(1) else now.toLocalDate()
-                        subtitle = if (table == null) "点击打开课程表" else "${displayedDate.monthValue}/${displayedDate.dayOfMonth} · 本地课表"
+                        subtitle = if (snapshot.day(displayedDate) == null) "点击打开课程表" else "${displayedDate.monthValue}/${displayedDate.dayOfMonth} · 本地课表"
                         action = if (auto) "上完看明天：开" else "上完看明天：关"
                     }
                     "electricity" -> {
                         val electric = app.campusRepository.electricity(account)
-                        body = electric?.let { "${it.balance} 度" } ?: "请在 App 中选择宿舍"
-                        subtitle = electric?.let { it.dorm.building.name + " " + it.dorm.room.name + " · " + Instant.ofEpochMilli(it.checkedAt).atZone(SchoolZone).format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")) } ?: "点击绑定宿舍"
+                        val dorm = app.campusRepository.selectedDorm(account)
+                        body = electric?.let { "${it.balance} 度" } ?: if (dorm != null) "余额待查询" else "请在 App 中选择宿舍"
+                        subtitle = electric?.let { it.dorm.building.name + " " + it.dorm.room.name + " · " + Instant.ofEpochMilli(it.checkedAt).atZone(SchoolZone).format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")) } ?: if (dorm != null) "${dorm.building.name} ${dorm.room.name} · 点击查询余额" else "点击绑定宿舍"
                         options.getString("electricError", null)?.let { subtitle = it }
                         action = "刷新余额"
                     }
@@ -70,6 +74,21 @@ object CampusWidgets {
                 manager.updateAppWidget(id, view)
             }
         }
+    }
+    private fun schedule(context: Context, snapshot: WidgetCourseSnapshot, now: ZonedDateTime) {
+        val alarm = context.getSystemService(AlarmManager::class.java)
+        val pending = PendingIntent.getBroadcast(context, 0, Intent(context, WidgetRefreshReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val at = nextWidgetRefresh(snapshot, now)
+        try {
+            if (SystemCoordinator.exactAllowed(context)) alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+            else alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+        } catch (_: SecurityException) { alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending) }
+    }
+}
+class WidgetRefreshReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val result = goAsync()
+        CoroutineScope(Dispatchers.IO).launch { try { SystemCoordinator.synchronize(context) } finally { result.finish() } }
     }
 }
 open class CampusWidgetProvider : AppWidgetProvider() {

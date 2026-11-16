@@ -73,8 +73,10 @@ class CampusRepository(private val context: Context, val store: LocalStore, priv
     suspend fun saveDorm(account: String, dorm: Dorm) { if (store.account() != account) throw SessionExpired(); store.extra("dorm:$account", dorm); store.extra("electric:$account", null) }
     suspend fun clearDorm(account: String) { store.extra("dorm:$account", null); store.extra("electric:$account", null) }
     suspend fun refreshElectricity(account: String): Electricity {
+        val version = session.sessionVersion()
         val dorm = selectedDorm(account) ?: throw IllegalStateException("请先选择宿舍")
         val balance = session.withSession(account) { pay.balance(dorm) }
+        session.checkSession(version)
         if (store.account() != account || selectedDorm(account) != dorm) throw IllegalStateException("宿舍已切换，请刷新")
         return Electricity(dorm, balance, System.currentTimeMillis()).also { store.extra("electric:$account", it); store.record(account, it) }
     }

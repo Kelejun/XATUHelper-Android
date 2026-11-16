@@ -10,8 +10,12 @@ data class AcademicNotice(
 
 fun changedGrades(previous: List<Grade>, current: List<Grade>): List<Grade> {
     if (previous.isEmpty()) return emptyList()
-    val old = previous.associateBy { it.id }
-    return current.filter { it.score.isNotBlank() && it.score != "--" && (old[it.id] == null || old[it.id]?.score != it.score) }
+    val old = previous.groupBy { "${it.code}|${it.term}|${it.course}" }
+    return current.filter { grade ->
+        grade.score.isNotBlank() && grade.score != "--" && old["${grade.code}|${grade.term}|${grade.course}"].orEmpty().none {
+            gradeFingerprint(listOf(it)) == gradeFingerprint(listOf(grade))
+        }
+    }
 }
 
 fun academicNotice(kind: AcademicKind, scope: String, previous: AcademicSnapshot?, current: AcademicSnapshot): AcademicNotice? {

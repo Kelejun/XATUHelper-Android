@@ -283,9 +283,9 @@ import java.time.format.DateTimeFormatter
 @Composable private fun HomeScreen(state: UiState, onTable: () -> Unit, onCourse: (CourseBlock) -> Unit, onAcademic: (String) -> Unit, campus: CampusState) {
     var now by remember { mutableStateOf(ZonedDateTime.now(SchoolZone)) }
     LaunchedEffect(Unit) { while (true) { now = ZonedDateTime.now(SchoolZone); delay(30_000) } }
-    val table = state.table
+    val table = state.currentTable ?: state.table?.takeIf { it.kind == TableKind.STUDENT && it.semester.id == state.currentSemester }
     val week = table?.let { weekOf(LocalDate.parse(it.monday), now.toLocalDate()) } ?: state.week
-    val current = state.selectedSemester == state.currentSemester
+    val current = table != null && table.semester.id == state.currentSemester
     val schedule = homeSchedule(table, current, now.toLocalDate(), now.toLocalTime())
     val nextExam = state.academic[academicKey(AcademicKind.EXAMS, state.currentSemester)]?.data?.exams
         ?.filter { it.date(examAnchor(state))?.let { day -> day >= now.toLocalDate() } == true }
