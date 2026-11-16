@@ -106,7 +106,7 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
                     if (usageChart) ElectricUsageChart(electricUsage(state.history))
                     else BalanceChart(state.history.filter { runCatching { LocalDate.parse(it.day) in schoolToday().minusDays(6)..schoolToday() }.getOrDefault(false) }, false)
                 }
-                item { Text("历史由本机每日查询生成；相邻两天电量下降为用电估算，电量上升视为充值补电，缺少相邻日记录时不推算用量。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { Text("历史由本机每日查询生成；图表按查询间隔均摊用量，含充值区间使用非充值日平均用量估算，历史余额保留原始数据。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 items(state.history.asReversed(), key = { it.day }) { record ->
                     val index = state.history.indexOf(record)
                     val used = dailyDeduction(state.history.getOrNull(index - 1), record)
