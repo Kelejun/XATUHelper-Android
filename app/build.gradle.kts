@@ -23,11 +23,11 @@ android {
         applicationId = "com.xatune.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 55
+        versionCode = 57
         versionName = "1.1.10"
         buildConfigField("String", "PUSH_CHANNEL", "\"$pushChannel\"")
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
-        buildConfigField("String", "ANNOUNCEMENTS_BASE_URL", "\"${providers.gradleProperty("announcementsBaseUrl").orElse("http://47.109.84.89").get()}\"")
+        buildConfigField("String", "ANNOUNCEMENTS_BASE_URL", "\"${providers.gradleProperty("announcementsBaseUrl").orElse("https://api.xatune.cn").get()}\"")
         buildConfigField("boolean", "DEMO_ENABLED", "false")
         buildConfigField("boolean", "WEB_DIAGNOSTICS", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
