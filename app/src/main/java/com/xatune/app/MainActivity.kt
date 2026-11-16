@@ -5,6 +5,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.launch
 import androidx.lifecycle.ViewModelProvider
 import com.xatune.app.ui.*
 
@@ -21,6 +25,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() { super.onResume(); if (::helperModel.isInitialized) helperModel.resume() }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                (application as HelperApplication).statistics.whileForeground()
+            }
+        }
         enableEdgeToEdge()
         // Compose owns both palettes. OEM automatic darkening can invert text independently
         // of its container, especially on cached layers during page transitions.

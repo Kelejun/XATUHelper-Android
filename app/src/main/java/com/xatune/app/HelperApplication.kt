@@ -14,6 +14,7 @@ class HelperApplication : Application() {
         private set
     internal lateinit var cookies: SchoolCookies
         private set
+    val statistics by lazy { DailyStatistics(this) }
     val updates by lazy { AppUpdateRepository(UpdatePreferences(this)) }
     override fun onCreate() {
         super.onCreate()

@@ -245,6 +245,8 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val location by rememberCheckinLocationSettings()
     val locationPreferences = remember(context) { com.xatune.app.platform.CheckinLocationPreferences(context) }
+    val statistics = remember(context) { (context.applicationContext as com.xatune.app.HelperApplication).statistics }
+    var statisticsEnabled by remember { mutableStateOf(statistics.enabled) }
     var versionTaps by remember { mutableIntStateOf(0) }
     Scaffold(topBar = { TopAppBar(title = { Text("设置") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回校园") } }) }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize().testTag("settings"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -309,6 +311,10 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
                     Modifier.testTag("qqDiscussionGroup"), selectableDetail = true) { uriHandler.openUri(qqGroupJoinUrl) }
             }
             item { ServiceRow("GitHub 仓库", "Kelejun/XATUHelper-Android", Icons.Default.Code, Modifier.testTag("githubRepository")) { uriHandler.openUri("https://github.com/Kelejun/XATUHelper-Android") } }
+            item { ToggleRow("参与使用统计", "", statisticsEnabled, {
+                statistics.enabled = it
+                statisticsEnabled = it
+            }, switchModifier = Modifier.testTag("dailyStatisticsSetting")) }
             item { ServiceRow("隐私政策", "查看数据使用与删除方式", Icons.Default.PrivacyTip) { privacy = true } }
             item {
                 ContentCard(Modifier.fillMaxWidth()) {
