@@ -18,8 +18,8 @@ internal fun configureCampusWebView(web: WebView) {
     web.settings.displayZoomControls = false
 }
 
-internal class CampusWebDocuments(context: Context) : Closeable {
-    private val documents = EamsDocuments((context.applicationContext as HelperApplication).cookies)
+internal class CampusWebDocuments(context: Context, cookies: okhttp3.CookieJar = (context.applicationContext as HelperApplication).cookies) : Closeable {
+    private val documents = EamsDocuments(cookies)
     fun redirect(web: WebView, request: WebResourceRequest): Boolean {
         val secure = CasHttps.upgrade(request.url.toString())
         if (request.method == "GET" && secure != request.url.toString()) {

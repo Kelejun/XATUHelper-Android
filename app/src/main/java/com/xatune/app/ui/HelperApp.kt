@@ -158,7 +158,7 @@ import java.time.format.DateTimeFormatter
         "notifications" -> model.campus?.let { ReminderScreen(it, { page = "settings" }) }
         "checkinLocation" -> CheckinLocationPicker { page = "settings" }
         "widgets" -> WidgetSettings({ page = "settings" }, campusState)
-        in CampusLinks.pages.keys -> CampusWeb(destination!!, { model.browserClosed(); page = parentPage(destination) })
+        in CampusLinks.pages.keys -> CampusWeb(destination!!, { model.browserClosed(); page = parentPage(destination) }, onSessionExpired = model::webSessionExpired)
         "exams", "grades", "plan" -> AcademicScreen(when (destination) { "exams" -> AcademicKind.EXAMS; "grades" -> AcademicKind.GRADES; else -> AcademicKind.PLAN }, state, model, { page = null }, onRelogin, { page = if (destination == "plan") "planWeb" else "eams" }, initialScope = academicScope)
         else -> Scaffold(topBar = {
         TopAppBar(title = { Text(titles[tab], fontWeight = FontWeight.SemiBold) }, actions = {

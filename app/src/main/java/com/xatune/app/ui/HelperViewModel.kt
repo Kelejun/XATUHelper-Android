@@ -47,6 +47,7 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
     val state = mutable.asStateFlow()
     val campus = campusRepository?.let { CampusController(it, viewModelScope, syncSystems) }
     val destination = MutableStateFlow<String?>(null)
+    fun webSessionExpired() { mutable.update { it.copy(needsLogin = true) } }
     fun browserClosed() { viewModelScope.launch { repository.saveBrowserCookies(); campus?.load(); runCatching { syncSystems() } } }
     fun openDestination(page: String?) { if (page != null) destination.value = page }
     fun consumeDestination() { destination.value = null }

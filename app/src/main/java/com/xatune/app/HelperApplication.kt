@@ -17,6 +17,10 @@ class HelperApplication : Application() {
     val updates by lazy { AppUpdateRepository(UpdatePreferences(this)) }
     override fun onCreate() {
         super.onCreate()
+        if (android.os.Build.VERSION.SDK_INT >= 28 && getProcessName().endsWith(":manual_web")) {
+            android.webkit.WebView.setDataDirectorySuffix("manual-campus")
+            return
+        }
         if (BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
         val vault = SecretVault(this)
         cookies = SchoolCookies(CookieManager.getInstance().apply { setAcceptCookie(true) }, vault)

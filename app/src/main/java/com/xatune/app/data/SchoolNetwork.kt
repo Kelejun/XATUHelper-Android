@@ -30,6 +30,8 @@ object SchoolUrls {
 /** One CookieManager is shared by OkHttp and WebView, preserving HttpOnly and /eams paths. */
 class SchoolCookies(private val manager: CookieManager, private val vault: SecretVault) : CookieJar {
     private val urls = listOf(SchoolUrls.login, "https://authserver.xatu.edu.cn/", SchoolUrls.eams, SchoolUrls.eams + "homeExt.action", SchoolUrls.eams + "courseTableForStd.action", "https://jfpay.xatu.edu.cn/", "https://jfpay.xatu.edu.cn/api/")
+    private val observedUrls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun observe(url: String) { if (SchoolUrls.trusted(url)) observedUrls.add(url) }
     private fun onMainAndWait(block: (CountDownLatch) -> Unit) {
         check(Looper.myLooper() != Looper.getMainLooper())
         val latch = CountDownLatch(1)
@@ -72,10 +74,10 @@ class SchoolCookies(private val manager: CookieManager, private val vault: Secre
         manager.flush()
     }
     override fun loadForRequest(url: HttpUrl): List<Cookie> = manager.getCookie(url.toString()).orEmpty().split(';').mapNotNull { Cookie.parse(url, it.trim()) }
-    @Synchronized fun persist(credentials: Credentials? = vault.load().credentials) {
+    @Synchronized fun snapshot(): List<CookieRecord> {
         manager.flush()
         val records = if (WebViewFeature.isFeatureSupported(WebViewFeature.GET_COOKIE_INFO)) {
-            urls.flatMap { url -> CookieManagerCompat.getCookieInfo(manager, url).map { value ->
+            (urls + observedUrls + capturedCookies().values.map { it.url }).distinct().flatMap { url -> CookieManagerCompat.getCookieInfo(manager, url).map { value ->
                 val domain = value.split(';').map(String::trim).firstOrNull { it.startsWith("domain=", true) }?.substringAfter('=')?.trim()
                 CookieRecord(url, value, domain == null || domain.equals(url.toHttpUrl().host, ignoreCase = true))
             } }.distinct()
@@ -85,8 +87,9 @@ class SchoolCookies(private val manager: CookieManager, private val vault: Secre
             cookie != null && cookie.expiresAt > System.currentTimeMillis() &&
                 loadForRequest(url).any { it.name == cookie.name && it.value == cookie.value }
         } // Browser-only cookies remain in CookieManager's own store on older WebViews.
-        vault.save(Secrets(credentials, records))
+        return records
     }
+    @Synchronized fun persist(credentials: Credentials? = vault.load().credentials) { vault.save(Secrets(credentials, snapshot())) }
     @Synchronized fun clear() {
         captured = linkedMapOf()
         onMainAndWait { done -> manager.removeAllCookies { done.countDown() } }

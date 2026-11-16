@@ -22,7 +22,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.xatune.app.platform.CampusWebNavigation
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
+import com.xatune.app.HelperApplication
+import com.xatune.app.data.*
+import com.xatune.app.platform.WebRecoveryPolicy
 
 object CampusLinks {
     fun mayLocate(page: String, origin: String, topUrl: String): Boolean {
@@ -42,7 +45,21 @@ object CampusLinks {
 }
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
-@Composable fun CampusWeb(page: String, onClose: () -> Unit) {
+@Composable fun CampusWeb(page: String, onClose: () -> Unit, sessionRepository: TimetableRepository? = null, onSessionExpired: () -> Unit = {}) {
+    val context = LocalContext.current
+    val repository = sessionRepository ?: (context.applicationContext as HelperApplication).repository
+    CampusWebContent(page, onClose, repository, {
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            context.startActivity(Intent(context, com.xatune.app.platform.ManualCampusWebActivity::class.java)
+                .putExtra("entry", CampusLinks.pages.getValue(page).second)
+                .putExtra("title", CampusLinks.pages.getValue(page).first).putExtra("page", page))
+        } else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(CampusLinks.pages.getValue(page).second))) }
+    }, onSessionExpired)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("SetJavaScriptEnabled")
+@Composable private fun CampusWebContent(page: String, onClose: () -> Unit, repository: TimetableRepository, onManual: () -> Unit, onSessionExpired: () -> Unit) {
     val (title, url) = CampusLinks.pages.getValue(page)
     val context = LocalContext.current
     var web by remember { mutableStateOf<WebView?>(null) }
@@ -50,9 +67,52 @@ object CampusLinks {
     val checkinLocation by rememberCheckinLocationSettings()
     var documents by remember { mutableStateOf<com.xatune.app.platform.CampusWebDocuments?>(null) }
     var diagnostics by remember { mutableStateOf<com.xatune.app.platform.WebDiagnostics?>(null) }
+    val scope = rememberCoroutineScope()
+    val version = remember(repository) { repository.sessionVersion() }
+    val policy = remember { WebRecoveryPolicy() }
+    val cookies = (context.applicationContext as HelperApplication).cookies
+    var recovery by remember { mutableLongStateOf(repository.recoveryVersion()) }
+    var recoveryJob by remember { mutableStateOf<Job?>(null) }
+    var recovering by remember { mutableStateOf(false) }
+    var authFailure by remember { mutableStateOf(false) }
+    var closed by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var navigation by remember { mutableIntStateOf(0) }
+    fun restore(view: WebView, explicit: Boolean = false) {
+        if (closed || recovering) return
+        view.alpha = 0f
+        if (!explicit && !policy.begin()) {
+            loading = false; authFailure = true
+            error = "登录恢复后网页仍需要认证，请重试或重新登录网页。"
+            view.stopLoading()
+            return
+        }
+        recovering = true; loading = true; authFailure = false; error = null
+        view.stopLoading()
+        recoveryJob = scope.launch(Dispatchers.Main.immediate) {
+            try {
+                repository.checkSession(version)
+                val account = repository.store.account()
+                val restored = repository.recoverWebSession(account, version, recovery)
+                repository.checkSession(version)
+                ensureActive()
+                if (closed) return@launch
+                recovery = restored
+                view.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+                recovering = false
+                view.loadUrl(url, mapOf("Cache-Control" to "no-cache"))
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                if (!closed) {
+                    loading = false; authFailure = true
+                    error = when (e) { is WebLoginRequired -> "本次恢复需要验证码，请重新登录网页。"; is SessionExpired -> "网页登录已过期，请重试或重新登录网页。"; else -> "网页登录恢复失败，请检查网络后重试。" }
+                    if (e is SessionExpired || e is WebLoginRequired) onSessionExpired()
+                }
+            } finally { if (!closed) recovering = false }
+        }
+    }
+
     LaunchedEffect(loading, navigation) {
         if (loading) {
             delay(30_000)
@@ -72,13 +132,14 @@ object CampusLinks {
     }
     val backModifier = Modifier.predictiveBack { if (web?.canGoBack() == true) web?.goBack() else onClose() }
     DisposableEffect(Unit) { onDispose {
+        closed = true; recoveryJob?.cancel()
         pendingLocation?.let { it.second.invoke(it.first, false, false) }; files?.onReceiveValue(null)
         documents?.close(); documents = null
         diagnostics?.close(); diagnostics = null
         locationBridge?.close(); locationBridge = null
         web?.apply { stopLoading(); webChromeClient = null; webViewClient = WebViewClient(); removeAllViews(); destroy() }; web = null
     } }
-    Scaffold(modifier = backModifier, topBar = { TopAppBar(title = { Text(title) }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "关闭网页") } }, actions = { WebDiagnosticExport { diagnostics?.capture("export") }; IconButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(web?.url ?: url))) }.onFailure { error = "没有可打开网页的浏览器" } }) { Icon(Icons.Default.OpenInNew, "在浏览器中打开") }; IconButton(onClick = { error = null; web?.reload() }) { Icon(Icons.Default.Refresh, "重新加载网页") } }) }) { padding ->
+    Scaffold(modifier = backModifier, topBar = { TopAppBar(title = { Text(title) }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "关闭网页") } }, actions = { WebDiagnosticExport { diagnostics?.capture("export") }; IconButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(web?.url ?: url))) }.onFailure { error = "没有可打开网页的浏览器" } }) { Icon(Icons.Default.OpenInNew, "在浏览器中打开") }; IconButton(onClick = { if (authFailure) web?.let { restore(it, explicit = true) } else { error = null; web?.reload() } }) { Icon(Icons.Default.Refresh, "重新加载网页") } }) }) { padding ->
         Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
             LoadingProgress(loading)
             if (page == "checkin") Box(Modifier.padding(12.dp)) {
@@ -88,10 +149,15 @@ object CampusLinks {
                 } else "定位仅用于当前学校签到网页，需你授权后提供。")
             }
             error?.let { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
+            if (recovering) Text("正在恢复网页登录…", Modifier.padding(16.dp))
+            if (authFailure) Row(Modifier.padding(horizontal = 16.dp)) {
+                TextButton(onClick = { web?.let { restore(it, explicit = true) } }) { Text("重试") }
+                TextButton(onClick = onManual) { Text("重新登录网页") }
+            }
             AndroidView(modifier = Modifier.weight(1f).fillMaxWidth(), factory = { ctx -> WebView(ctx).apply {
                 web = this
                 com.xatune.app.platform.configureCampusWebView(this)
-                documents = com.xatune.app.platform.CampusWebDocuments(this.context)
+                documents = com.xatune.app.platform.CampusWebDocuments(this.context, cookies)
                 if (page == "checkin") locationBridge = com.xatune.app.platform.CheckinLocationBridge(this).also { it.attach() }
                 settings.javaScriptEnabled = true; settings.domStorageEnabled = true
                 settings.allowFileAccess = false; settings.allowContentAccess = true
@@ -120,7 +186,11 @@ object CampusLinks {
                 }
                 webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? { diagnostics?.request(request); return documents?.intercept(request) }
-                    override fun onPageCommitVisible(view: WebView, url: String) { diagnostics?.event("page-visible", com.xatune.app.platform.WebDiagnosticText.url(url)) }
+                    override fun onPageCommitVisible(view: WebView, url: String) {
+                        diagnostics?.event("page-visible", com.xatune.app.platform.WebDiagnosticText.url(url))
+                        if (policy.authenticationResponse(url)) restore(view)
+                        else if (!recovering && !authFailure) view.alpha = 1f
+                    }
                     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean { diagnostics?.event("renderer-gone", "crashed=${detail.didCrash()} priority=${detail.rendererPriorityAtExit()}"); return false }
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         if (documents?.redirect(view, request) == true) return true
@@ -139,13 +209,33 @@ object CampusLinks {
                         loading = false
                         return true
                     }
-                    override fun onPageStarted(view: WebView, url: String, icon: android.graphics.Bitmap?) { diagnostics?.started(url); navigation++; loading = true; error = null }
-                    override fun onPageFinished(view: WebView, url: String) { diagnostics?.finished(url); loading = false; CookieManager.getInstance().flush() }
+                    override fun onPageStarted(view: WebView, url: String, icon: android.graphics.Bitmap?) {
+                        cookies.observe(url)
+                        diagnostics?.started(url); navigation++; loading = true
+                        if (!authFailure) error = null
+                        if (policy.authenticationResponse(url)) view.alpha = 0f
+                    }
+                    override fun onPageFinished(view: WebView, url: String) {
+                        diagnostics?.finished(url)
+                        if (recovering || authFailure || closed) return
+                        if (policy.authenticationResponse(url)) { restore(view); return }
+                        loading = false; view.alpha = 1f
+                        val observed = recovery
+                        scope.launch(Dispatchers.Main.immediate) { try { repository.saveBrowserCookies(version, observed) } catch (e: CancellationException) { throw e } catch (_: Exception) { } }
+                    }
                     override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) { diagnostics?.error(request, e); if (request.isForMainFrame) { loading = false; error = "网页加载失败，请检查网络后重试" } }
-                    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) { diagnostics?.http(request, response); if (request.isForMainFrame) { loading = false; error = "学校服务返回 HTTP ${response.statusCode}" } }
+                    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) { diagnostics?.http(request, response); if (policy.authenticationResponse(request.url.toString(), request.isForMainFrame, response.statusCode)) restore(view) else if (request.isForMainFrame) { loading = false; error = "学校服务返回 HTTP ${response.statusCode}" } }
                     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, sslError: android.net.http.SslError) { diagnostics?.ssl(sslError); handler.cancel(); loading = false; error = "学校网页的安全连接校验失败" }
                 }
-                loadUrl(url)
+                val view = this
+                scope.launch(Dispatchers.Main.immediate) {
+                    try {
+                        repository.checkSession(version)
+                        ensureActive()
+                        if (!closed) view.loadUrl(url)
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { if (!closed) { loading = false; error = "网页初始化失败，请重试" } }
+                }
             } })
         }
     }

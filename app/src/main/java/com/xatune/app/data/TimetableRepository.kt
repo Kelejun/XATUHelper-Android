@@ -27,33 +27,52 @@ class TimetableRepository(val store: LocalStore, private val vault: SecretVault,
     }
     private var shell: Shell? = null
     private val attempts = ArrayDeque<Long>()
-    suspend fun saveBrowserCookies() = guarded { cookies.persist() }
+    suspend fun saveBrowserCookies(version: Long = sessionVersion(), observedRecovery: Long = recoveryVersion()) = guarded {
+        checkSession(version)
+        if (observedRecovery == recoveryRevision.get()) cookies.persist()
+    }
     suspend fun initialize() = guarded { cookies.restore() }
     private suspend fun <T> authenticated(version: Long, operation: suspend () -> T): T {
         checkSession(version)
         try { return operation().also { checkSession(version) } } catch (expired: SessionExpired) {
             checkSession(version)
-            val now = System.currentTimeMillis()
-            while (attempts.isNotEmpty() && now - attempts.first() > 3_600_000) attempts.removeFirst()
-            if (attempts.size >= 3 || (attempts.lastOrNull()?.let { now - it < 60_000 } == true)) throw SessionExpired()
-            attempts.addLast(now)
-            // Try existing CAS SSO first; password submission is only a bounded fallback.
-            if (!network.renew().also { checkSession(version) }) {
-                val saved = vault.load().credentials ?: throw SessionExpired()
-                network.login(saved.account, saved.password)
-                checkSession(version)
-            }
-            shell = null
+            recover(version)
             return operation()
         }
+    }
+    private val recoveryRevision = java.util.concurrent.atomic.AtomicLong()
+    fun recoveryVersion(): Long = recoveryRevision.get()
+    private suspend fun recover(version: Long) {
+        val now = System.currentTimeMillis()
+        while (attempts.isNotEmpty() && now - attempts.first() > 3_600_000) attempts.removeFirst()
+        if (attempts.size >= 3 || (attempts.lastOrNull()?.let { now - it < 60_000 } == true)) throw SessionExpired()
+        attempts.addLast(now)
+        // Try existing CAS SSO first; password submission is only a bounded fallback.
+        if (!network.renew().also { checkSession(version) }) {
+            val saved = vault.load().credentials ?: throw SessionExpired()
+            if (saved.account != store.account()) throw SessionExpired()
+            network.login(saved.account, saved.password)
+            checkSession(version)
+        }
+        shell = null
+        checkSession(version)
+        recoveryRevision.incrementAndGet()
+    }
+    suspend fun recoverWebSession(account: String, version: Long, observedRecovery: Long): Long = guarded {
+        checkSession(version)
+        if (store.account() != account || account.isBlank()) throw SessionExpired()
+        if (recoveryRevision.get() == observedRecovery) recover(version)
+        checkSession(version)
+        cookies.persist()
+        recoveryRevision.get()
     }
     suspend fun <T> withSession(account: String, operation: () -> T): T = guarded { version ->
         if (store.account() != account || account.isBlank()) throw SessionExpired()
         authenticated(version) { operation() }.also { checkSession(version); cookies.persist() }
     }
-    suspend fun beginWebLogin() = guarded(newSession = true) { shell = null; cookies.clear() }
+    suspend fun beginWebLogin() = guarded(newSession = true) { shell = null; attempts.clear(); cookies.clear() }
     suspend fun login(account: String, password: String, firstMonday: LocalDate? = null): Timetable = guarded(newSession = true) { version ->
-        cookies.clear(); shell = null
+        cookies.clear(); shell = null; attempts.clear()
         network.login(account, password)
         checkSession(version)
         if (store.account() != account) store.clear()
