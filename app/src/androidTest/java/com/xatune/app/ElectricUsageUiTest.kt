@@ -42,4 +42,18 @@ class ElectricUsageUiTest {
         compose.onNodeWithTag("electricUsageReading").assertDoesNotExist()
     }
 
+    @Test fun rechargeAfterOverdrawnBalanceStillShowsReferenceEstimate() {
+        wakeQaDevice()
+        compose.runOnUiThread { compose.activity.setShowWhenLocked(true); compose.activity.setTurnScreenOn(true); compose.activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        val today = LocalDate.parse("2026-11-13")
+        val points = electricUsage(listOf(DailyBalance("2026-11-11", "1"), DailyBalance("2026-11-12", "-1"), DailyBalance("2026-11-13", "9")), today)
+        compose.setContent { HelperTheme { ElectricUsageChart(points, today) } }
+        compose.onNodeWithTag("electricUsageChart").performTouchInput { down(centerRight); advanceEventTime(275) }
+        compose.mainClock.advanceTimeBy(300)
+        compose.onNodeWithText("2026-11-13 · 2.00 度").assertIsDisplayed()
+        compose.onNodeWithText("平均用量估算").assertIsDisplayed()
+        compose.onNodeWithText("有电费充值").assertIsDisplayed()
+        compose.onNodeWithTag("electricUsageChart").performTouchInput { up() }
+    }
+
 }

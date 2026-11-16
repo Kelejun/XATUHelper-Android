@@ -37,4 +37,12 @@ class ElectricUsageTest {
         val points = usage("invalid" to "1", "2026-09-01" to "999", "2026-10-10" to "10", "2026-11-13" to "10", "2026-11-14" to "0")
         assertEquals(30, points.size); assertEquals("0.00", averageUsage(points).toString()); assertFalse(points.any { it.estimated })
     }
+    @Test fun overdrawnBalancesRemainValidConsumptionAndRechargeReferences() {
+        val points = usage("2026-11-10" to "1", "2026-11-11" to "-1", "2026-11-12" to "-3", "2026-11-13" to "7")
+        assertEquals(3, points.size)
+        assertEquals("2.00", averageUsage(points).toString())
+        assertTrue(points.last().recharge); assertTrue(points.last().estimated)
+        assertEquals("2.00", points.last().amount.toString())
+    }
+
 }

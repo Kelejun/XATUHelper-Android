@@ -10,7 +10,7 @@ fun electricUsage(records: List<DailyBalance>, today: LocalDate = schoolToday())
     val start = today.minusDays(29)
     val balances = records.mapNotNull { record ->
         runCatching { LocalDate.parse(record.day) }.getOrNull()?.takeIf { it <= today }?.let { day ->
-            record.balance.toBigDecimalOrNull()?.takeIf { it.signum() >= 0 }?.let { day to it }
+            record.balance.toBigDecimalOrNull()?.let { day to it }
         }
     }.toMap().toSortedMap().entries.toList()
     val points = balances.zipWithNext().flatMap { (previous, current) ->
