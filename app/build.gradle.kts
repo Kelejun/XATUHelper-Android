@@ -23,7 +23,7 @@ android {
         applicationId = "com.xatune.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 62
+        versionCode = 63
         versionName = "1.1.11"
         buildConfigField("String", "PUSH_CHANNEL", "\"$pushChannel\"")
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")

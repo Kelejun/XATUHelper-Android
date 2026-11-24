@@ -1,6 +1,8 @@
 package com.xatune.app.ui
 
 import android.Manifest
+import android.app.NotificationManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -212,21 +214,40 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { permissionEpoch++ }
     val notificationsAllowed = remember(permissionEpoch) { SystemCoordinator.notificationsAllowed(context) }
     val exactAllowed = remember(permissionEpoch) { SystemCoordinator.exactAllowed(context) }
+    val promotionDisabled = remember(permissionEpoch) {
+        Build.VERSION.SDK_INT >= 36 && !context.getSystemService(NotificationManager::class.java).canPostPromotedNotifications()
+    }
+    val options = state.reminders
     var pending by remember { mutableStateOf<ReminderSettings?>(null) }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> permissionEpoch++; if (granted) pending?.let(controller::saveReminders); pending = null }
     fun update(settings: ReminderSettings) {
-        if ((settings.classes || settings.exams) && Build.VERSION.SDK_INT >= 33 && !SystemCoordinator.notificationsAllowed(context)) { pending = settings; notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }
-        else controller.saveReminders(settings)
+        val enabling = (settings.classes && !options.classes) || (settings.exams && !options.exams) ||
+            (settings.courseProgress && !options.courseProgress)
+        if (enabling && Build.VERSION.SDK_INT >= 33 && !SystemCoordinator.notificationsAllowed(context)) {
+            pending = settings
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else controller.saveReminders(settings)
     }
     var editingTime by remember { mutableStateOf<String?>(null) }
     var leadMenu by remember { mutableStateOf<String?>(null) }
-    val options = state.reminders
     CampusFrame("提醒设置", state, onBack) {
         LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.testTag("reminders")) {
             item { InfoPanel("使用当前学期的学生课表与考试缓存，滚动安排未来七天；更新数据后自动重排。", Icons.Default.Notifications) }
             item { SectionHeading("课程提醒") }
             item { ToggleRow("上课提醒", "按课表安排课前通知", options.classes, { update(options.copy(classes = it)) }, enabled = !state.busy) }
             item { Box { OutlinedButton(onClick = { leadMenu = "class" }) { Text("上课前 ${options.classLead} 分钟") }; DropdownMenu(leadMenu == "class", { leadMenu = null }) { listOf(5,10,15,20,30,45,60).forEach { minutes -> DropdownMenuItem(text = { Text("$minutes 分钟") }, onClick = { leadMenu = null; update(options.copy(classLead = minutes)) }) } } } }
+            item { HorizontalDivider() }
+            item { SectionHeading("实时活动") }
+            item { ToggleRow("课程进度", "在系统通知中查看教室和上下课倒计时", options.courseProgress, { update(options.copy(courseProgress = it)) }, enabled = !state.busy) }
+            if (options.courseProgress && promotionDisabled && Build.VERSION.SDK_INT >= 36) item {
+                OutlinedButton(onClick = {
+                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    try { context.startActivity(intent) }
+                    catch (_: ActivityNotFoundException) {
+                        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                    }
+                }) { Text("系统实时活动设置") }
+            }
             item { HorizontalDivider() }
             item { SectionHeading("考试安排") }
             item { ToggleRow("考试提醒", "根据当前学期的考试安排发送通知", options.exams, { update(options.copy(exams = it)) }, enabled = !state.busy) }
