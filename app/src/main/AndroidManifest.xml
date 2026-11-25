@@ -26,5 +26,6 @@
         <receiver android:name=".platform.CourseWidget" android:label="@string/widget_courses" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_courses" /></receiver>
         <receiver android:name=".platform.ElectricityWidget" android:label="@string/widget_electricity" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_electricity" /></receiver>
         <receiver android:name=".platform.HolidayWidget" android:label="@string/widget_holidays" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_holidays" /></receiver>
+        <receiver android:name=".platform.ExamWidget" android:label="@string/widget_exams" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_exams" /></receiver>
     </application>
 </manifest>

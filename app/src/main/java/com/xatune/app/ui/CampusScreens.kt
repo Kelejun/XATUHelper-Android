@@ -269,7 +269,7 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
     }
     CampusFrame("桌面小组件", state, onBack) {
         Column(Modifier.padding(horizontal = 20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SectionHeading("校园信息，就在桌面", "课程、电费和假期数据来自本机缓存")
+            SectionHeading("校园信息，就在桌面", "课程、考试、电费和假期数据来自本机缓存")
             InfoPanel("Android 12 及以上跟随系统壁纸配色和深浅模式。点击小组件可进入对应页面。", Icons.Default.Palette)
             ContentCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -278,11 +278,16 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
                     FilledTonalButton(onClick = { openPermissions() }) { Icon(Icons.Default.Security, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("桌面添加权限设置") }
                 }
             }
-            listOf(Triple("课程", "今天的课程安排，上完后可切换到明天", CourseWidget::class.java), Triple("宿舍电费", "剩余电量一眼可见，支持手动刷新", ElectricityWidget::class.java), Triple("假期倒计时", "查看距离下一个校园假期还有几天", HolidayWidget::class.java)).forEach { (label, detail, cls) ->
+            listOf(
+                Triple("课程", "今天的课程安排，上完后可切换到明天", CourseWidget::class.java),
+                Triple("考试倒计时", "查看最近一场考试倒计时、考场与后续场次", ExamWidget::class.java),
+                Triple("宿舍电费", "剩余电量一眼可见，支持手动刷新", ElectricityWidget::class.java),
+                Triple("假期倒计时", "查看距离下一个校园假期还有几天", HolidayWidget::class.java)
+            ).forEach { (label, detail, cls) ->
                 ContentCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconTile(when (label) { "课程" -> Icons.Default.CalendarMonth; "宿舍电费" -> Icons.Default.Bolt; else -> Icons.Default.EventAvailable }, prominent = true)
+                            IconTile(when (label) { "课程" -> Icons.Default.CalendarMonth; "考试倒计时" -> Icons.Default.School; "宿舍电费" -> Icons.Default.Bolt; else -> Icons.Default.EventAvailable }, prominent = true)
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(label, style = MaterialTheme.typography.titleMedium)
                                 Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

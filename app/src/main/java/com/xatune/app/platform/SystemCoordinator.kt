@@ -53,7 +53,8 @@ object SystemCoordinator {
         val account = store.account()
         val semester = if (account.isNotBlank()) store.currentSemester(account) else ""
         val table = if (account.isNotBlank()) store.table(account, semester, TableKind.STUDENT) else null
-        val exams = if (account.isNotBlank()) store.academic(account, AcademicKind.EXAMS, semester)?.exams.orEmpty() else emptyList()
+        val examSnapshot = if (account.isNotBlank()) store.academic(account, AcademicKind.EXAMS, semester) else null
+        val exams = examSnapshot?.exams.orEmpty()
         val prefs = context.getSharedPreferences("system_schedule", Context.MODE_PRIVATE)
         val manager = context.getSystemService(AlarmManager::class.java)
         prefs.getStringSet("ids", emptySet()).orEmpty().forEach { manager.cancel(alarmIntent(context, it)) }
@@ -69,7 +70,7 @@ object SystemCoordinator {
             } catch (_: SecurityException) { manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, reminder.at, pending) }
         }
         if (account.isBlank()) NotificationManagerCompat.from(context).cancelAll()
-        CampusWidgets.publish(context, account, table)
+        CampusWidgets.publish(context, account, table, semesterId = semester, exams = examSnapshot)
     } }
     fun maintain(context: Context) {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork("campus-maintenance", ExistingPeriodicWorkPolicy.KEEP, PeriodicWorkRequestBuilder<MaintenanceWorker>(12, TimeUnit.HOURS).build())

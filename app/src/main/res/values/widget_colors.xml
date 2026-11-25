@@ -1,1 +1,1 @@
-<resources><color name="widget_surface">#DFE7FF</color><color name="widget_text">#173568</color><string name="widget_courses">课程</string><string name="widget_electricity">宿舍电费</string><string name="widget_holidays">假期倒计时</string></resources>
+<resources><color name="widget_surface">#DFE7FF</color><color name="widget_text">#173568</color><string name="widget_courses">课程</string><string name="widget_electricity">宿舍电费</string><string name="widget_holidays">假期倒计时</string><string name="widget_exams">考试倒计时</string></resources>

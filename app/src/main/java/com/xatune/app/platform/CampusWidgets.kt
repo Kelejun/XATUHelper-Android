@@ -12,22 +12,52 @@ import java.time.*
 import java.time.temporal.ChronoUnit
 
 object CampusWidgets {
-    suspend fun publish(context: Context, account: String, table: Timetable?, now: ZonedDateTime = ZonedDateTime.now(SchoolZone), scheduleRefresh: Boolean = true) {
+    suspend fun publish(
+        context: Context,
+        account: String,
+        table: Timetable?,
+        now: ZonedDateTime = ZonedDateTime.now(SchoolZone),
+        scheduleRefresh: Boolean = true,
+        semesterId: String = "",
+        exams: AcademicSnapshot? = null
+    ) {
         val app = context.applicationContext as HelperApplication
         val manager = AppWidgetManager.getInstance(context)
         val options = context.getSharedPreferences("widget_options", Context.MODE_PRIVATE)
         val previous = app.store.extra("widget.courseSnapshot", WidgetCourseSnapshot::class.java)
         val snapshot = if (previous?.account == account && previous.source == widgetSource(table)) previous else widgetSnapshot(account, table, now.toLocalDate()).also { app.store.extra("widget.courseSnapshot", it) }
-        if (scheduleRefresh) schedule(context, snapshot, now)
-        for ((type, provider) in listOf("course" to CourseWidget::class.java, "electricity" to ElectricityWidget::class.java, "holiday" to HolidayWidget::class.java)) {
+        val anchor = table?.monday?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: now.toLocalDate()
+        val previousExams = app.store.extra("widget.examSnapshot", WidgetExamSnapshot::class.java)
+        val examSnapshot = if (account.isBlank()) {
+            widgetExamSnapshot("", "", 0L, emptyList(), anchor).also { app.store.extra("widget.examSnapshot", it) }
+        } else if (exams != null) {
+            widgetExamSnapshot(account, semesterId, exams.fetchedAt, exams.exams, anchor).also { app.store.extra("widget.examSnapshot", it) }
+        } else if (previousExams != null && previousExams.account == account && (semesterId.isBlank() || previousExams.semesterId == semesterId)) {
+            previousExams
+        } else {
+            widgetExamSnapshot(account, semesterId, 0L, emptyList(), anchor).also { app.store.extra("widget.examSnapshot", it) }
+        }
+        if (scheduleRefresh) schedule(context, snapshot, examSnapshot, now)
+        for ((type, provider) in listOf(
+            "course" to CourseWidget::class.java,
+            "electricity" to ElectricityWidget::class.java,
+            "holiday" to HolidayWidget::class.java,
+            "exam" to ExamWidget::class.java
+        )) {
             for (id in manager.getAppWidgetIds(ComponentName(context, provider))) {
                 val view = RemoteViews(context.packageName, R.layout.widget_campus)
-                var title = when (type) { "course" -> "课程"; "electricity" -> "宿舍电费"; else -> "假期倒计时" }
+                var title = when (type) { "course" -> "课程"; "electricity" -> "宿舍电费"; "exam" -> "考试倒计时"; else -> "假期倒计时" }
                 var body = "登录后查看校园信息"
                 var subtitle = "点击打开 XATune"
                 var action = "打开"
-                val page = when (type) { "course" -> "timetable"; "electricity" -> "electricity"; else -> "calendar" }
-                if (account.isNotBlank()) when (type) {
+                val page = when (type) { "course" -> "timetable"; "electricity" -> "electricity"; "exam" -> "exams"; else -> "calendar" }
+                if (type == "exam") {
+                    val minWidth = manager.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+                    val display = formatExamWidget(examSnapshot, now, wide = minWidth >= 250)
+                    title = display.title
+                    body = display.body
+                    subtitle = display.subtitle
+                } else if (account.isNotBlank()) when (type) {
                     "course" -> {
                         val auto = options.getBoolean("tomorrow:$id", false)
                         val today = snapshot.day(now.toLocalDate())?.courses.orEmpty().filter { LocalTime.parse(Periods.range(it).substringAfter('–')) > now.toLocalTime() }
@@ -75,10 +105,10 @@ object CampusWidgets {
             }
         }
     }
-    private fun schedule(context: Context, snapshot: WidgetCourseSnapshot, now: ZonedDateTime) {
+    private fun schedule(context: Context, snapshot: WidgetCourseSnapshot, examSnapshot: WidgetExamSnapshot?, now: ZonedDateTime) {
         val alarm = context.getSystemService(AlarmManager::class.java)
         val pending = PendingIntent.getBroadcast(context, 0, Intent(context, WidgetRefreshReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val at = nextWidgetRefresh(snapshot, now)
+        val at = nextWidgetRefresh(snapshot, now, examSnapshot)
         try {
             if (SystemCoordinator.exactAllowed(context)) alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
             else alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
@@ -120,3 +150,4 @@ open class CampusWidgetProvider : AppWidgetProvider() {
 class CourseWidget : CampusWidgetProvider()
 class ElectricityWidget : CampusWidgetProvider()
 class HolidayWidget : CampusWidgetProvider()
+class ExamWidget : CampusWidgetProvider()
