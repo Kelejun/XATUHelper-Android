@@ -79,9 +79,11 @@ object CampusLinks {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var navigation by remember { mutableIntStateOf(0) }
-    fun restore(view: WebView, explicit: Boolean = false) {
+    fun restore(view: WebView, explicit: Boolean = false, stoppedUrl: String? = null) {
         if (closed || recovering) return
         view.alpha = 0f
+        policy.markStopped(stoppedUrl)
+        policy.markStopped(view.url)
         if (!explicit && !policy.begin()) {
             loading = false; authFailure = true
             error = "登录恢复后网页仍需要认证，请重试或重新登录网页。"
@@ -188,7 +190,7 @@ object CampusLinks {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? { diagnostics?.request(request); return documents?.intercept(request) }
                     override fun onPageCommitVisible(view: WebView, url: String) {
                         diagnostics?.event("page-visible", com.xatune.app.platform.WebDiagnosticText.url(url))
-                        if (policy.authenticationResponse(url)) restore(view)
+                        if (policy.authenticationResponse(url)) restore(view, stoppedUrl = url)
                         else if (!recovering && !authFailure) view.alpha = 1f
                     }
                     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean { diagnostics?.event("renderer-gone", "crashed=${detail.didCrash()} priority=${detail.rendererPriorityAtExit()}"); return false }
@@ -211,6 +213,7 @@ object CampusLinks {
                     }
                     override fun onPageStarted(view: WebView, url: String, icon: android.graphics.Bitmap?) {
                         cookies.observe(url)
+                        policy.onNavigationStarted(url)
                         diagnostics?.started(url); navigation++; loading = true
                         if (!authFailure) error = null
                         if (policy.authenticationResponse(url)) view.alpha = 0f
@@ -218,13 +221,27 @@ object CampusLinks {
                     override fun onPageFinished(view: WebView, url: String) {
                         diagnostics?.finished(url)
                         if (recovering || authFailure || closed) return
-                        if (policy.authenticationResponse(url)) { restore(view); return }
+                        if (policy.authenticationResponse(url)) { restore(view, stoppedUrl = url); return }
                         loading = false; view.alpha = 1f
                         val observed = recovery
                         scope.launch(Dispatchers.Main.immediate) { try { repository.saveBrowserCookies(version, observed) } catch (e: CancellationException) { throw e } catch (_: Exception) { } }
                     }
-                    override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) { diagnostics?.error(request, e); if (request.isForMainFrame) { loading = false; error = "网页加载失败，请检查网络后重试" } }
-                    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) { diagnostics?.http(request, response); if (policy.authenticationResponse(request.url.toString(), request.isForMainFrame, response.statusCode)) restore(view) else if (request.isForMainFrame) { loading = false; error = "学校服务返回 HTTP ${response.statusCode}" } }
+                    override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
+                        diagnostics?.error(request, e)
+                        if (!request.isForMainFrame) return
+                        if (policy.shouldIgnoreMainFrameError(request.url?.toString(), view.url, recovering, authFailure)) return
+                        loading = false
+                        error = "网页加载失败，请检查网络后重试"
+                    }
+                    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                        diagnostics?.http(request, response)
+                        val requestUrl = request.url.toString()
+                        if (policy.authenticationResponse(requestUrl, request.isForMainFrame, response.statusCode)) restore(view, stoppedUrl = requestUrl)
+                        else if (request.isForMainFrame && !policy.shouldIgnoreMainFrameError(requestUrl, view.url, recovering, authFailure)) {
+                            loading = false
+                            error = "学校服务返回 HTTP ${response.statusCode}"
+                        }
+                    }
                     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, sslError: android.net.http.SslError) { diagnostics?.ssl(sslError); handler.cancel(); loading = false; error = "学校网页的安全连接校验失败" }
                 }
                 val view = this
