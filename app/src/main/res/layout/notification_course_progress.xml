@@ -1,0 +1,33 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/course_activity" android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="vertical" android:background="@drawable/course_activity_background"
+    android:paddingHorizontal="16dp" android:paddingVertical="12dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
+        <ImageView android:id="@+id/course_phase_icon" android:layout_width="14dp" android:layout_height="14dp" android:importantForAccessibility="no" />
+        <TextView android:id="@+id/course_phase" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:layout_marginStart="5dp" android:textSize="11sp" android:fontFamily="sans-serif-medium" android:maxLines="1" />
+        <Chronometer android:id="@+id/course_timer" android:layout_width="wrap_content" android:minWidth="72dp" android:layout_height="wrap_content"
+            android:background="@drawable/course_activity_capsule" android:paddingHorizontal="12dp" android:paddingVertical="3dp"
+            android:gravity="center" android:textSize="16sp" android:fontFamily="sans-serif-medium" android:fontFeatureSettings="tnum"
+            android:textColor="@color/course_activity_foreground" android:includeFontPadding="false" />
+        <ImageView android:contentDescription="@string/course_activity_completed" android:id="@+id/course_completion" android:layout_width="24dp" android:layout_height="24dp" android:src="@drawable/ic_course_check" android:visibility="gone" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:layout_marginTop="7dp">
+        <TextView android:id="@+id/course_name" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:textSize="17sp" android:fontFamily="sans-serif-medium" android:textColor="@color/course_activity_foreground"
+            android:maxLines="2" android:ellipsize="end" />
+        <TextView android:id="@+id/course_room" android:layout_width="wrap_content" android:layout_height="wrap_content" android:maxWidth="100dp"
+            android:layout_marginStart="10dp" android:background="@drawable/course_activity_room" android:paddingHorizontal="7dp" android:paddingVertical="3dp"
+            android:textSize="11sp" android:fontFamily="sans-serif-medium" android:maxLines="1" android:ellipsize="start" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/course_route" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:gravity="center_vertical" android:visibility="gone">
+        <TextView android:id="@+id/course_origin" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:textSize="12sp" android:textColor="@color/course_activity_secondary" android:maxLines="1" android:ellipsize="start" />
+        <ImageView android:id="@+id/course_route_arrow" android:layout_width="16dp" android:layout_height="16dp" android:layout_marginHorizontal="8dp" android:src="@drawable/ic_course_arrow" android:importantForAccessibility="no" />
+        <TextView android:id="@+id/course_destination" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:gravity="end" android:textSize="12sp" android:fontFamily="sans-serif-medium" android:maxLines="1" android:ellipsize="start" />
+    </LinearLayout>
+    <ImageView android:contentDescription="@string/course_activity_progress" android:id="@+id/course_progress" android:layout_width="match_parent" android:layout_height="4dp"
+        android:layout_marginTop="9dp" android:scaleType="fitXY" />
+</LinearLayout>

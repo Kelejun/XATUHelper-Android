@@ -45,7 +45,11 @@ fun nextCampusEvent(calendar: SchoolCalendar?, today: LocalDate = schoolToday())
     return (starts + breaks).filter { it.date >= today }.minByOrNull { it.date }
 }
 
-data class ReminderSettings(val classes: Boolean = false, val classLead: Int = 30, val exams: Boolean = false, val eve: Boolean = true, val eveMinutes: Int = 1260, val morning: Boolean = true, val morningMinutes: Int = 480, val before: Boolean = true, val examLead: Int = 30, val courseProgress: Boolean = false)
+data class ReminderSettings(val classes: Boolean = false, val classLead: Int = 30, val exams: Boolean = false, val eve: Boolean = true, val eveMinutes: Int = 1260, val morning: Boolean = true, val morningMinutes: Int = 480, val before: Boolean = true, val examLead: Int = 30, val courseProgress: Boolean = false, val courseProgressBefore: Boolean? = null, val courseProgressDuring: Boolean? = null) {
+    val progressBefore: Boolean get() = courseProgressBefore ?: courseProgress
+    val progressDuring: Boolean get() = courseProgressDuring ?: courseProgress
+    val progressEnabled: Boolean get() = progressBefore || progressDuring
+}
 data class Reminder(val id: String, val at: Long, val title: String, val body: String, val page: String)
 object ReminderPlanner {
     fun plan(table: Timetable?, exams: List<Exam>, options: ReminderSettings, now: ZonedDateTime = ZonedDateTime.now(SchoolZone)): List<Reminder> {

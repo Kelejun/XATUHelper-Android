@@ -222,7 +222,7 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> permissionEpoch++; if (granted) pending?.let(controller::saveReminders); pending = null }
     fun update(settings: ReminderSettings) {
         val enabling = (settings.classes && !options.classes) || (settings.exams && !options.exams) ||
-            (settings.courseProgress && !options.courseProgress)
+            (settings.progressEnabled && !options.progressEnabled)
         if (enabling && Build.VERSION.SDK_INT >= 33 && !SystemCoordinator.notificationsAllowed(context)) {
             pending = settings
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -238,8 +238,9 @@ private fun moneyTime(at: Long) = Instant.ofEpochMilli(at).atZone(SchoolZone).fo
             item { Box { OutlinedButton(onClick = { leadMenu = "class" }) { Text("上课前 ${options.classLead} 分钟") }; DropdownMenu(leadMenu == "class", { leadMenu = null }) { listOf(5,10,15,20,30,45,60).forEach { minutes -> DropdownMenuItem(text = { Text("$minutes 分钟") }, onClick = { leadMenu = null; update(options.copy(classLead = minutes)) }) } } } }
             item { HorizontalDivider() }
             item { SectionHeading("实时活动") }
-            item { ToggleRow("课程进度", "在系统通知中查看教室和上下课倒计时", options.courseProgress, { update(options.copy(courseProgress = it)) }, enabled = !state.busy) }
-            if (options.courseProgress && promotionDisabled && Build.VERSION.SDK_INT >= 36) item {
+            item { ToggleRow("课前进行中展示", "课前和课间显示教室及距上课倒计时", options.progressBefore, { update(options.copy(courseProgressBefore = it)) }, enabled = !state.busy) }
+            item { ToggleRow("课中进行中展示", "上课期间显示距下课倒计时和课程进度", options.progressDuring, { update(options.copy(courseProgressDuring = it)) }, enabled = !state.busy) }
+            if (options.progressEnabled && promotionDisabled && Build.VERSION.SDK_INT >= 36) item {
                 OutlinedButton(onClick = {
                     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_PROMOTION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                     try { context.startActivity(intent) }

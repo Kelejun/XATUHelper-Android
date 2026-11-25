@@ -38,7 +38,7 @@ object SystemCoordinator {
         val manager = context.getSystemService(AlarmManager::class.java)
         prefs.getStringSet("ids", emptySet()).orEmpty().forEach { manager.cancel(alarmIntent(context, it)) }
         val settings = if (account.isNotBlank()) app.campusRepository.reminders(account) else ReminderSettings()
-        CourseProgressNotifications.synchronize(context, account, table, settings.courseProgress)
+        CourseProgressNotifications.synchronize(context, account, table, settings)
         val planned = if (account.isNotBlank() && notificationsAllowed(context)) ReminderPlanner.plan(table, exams, settings) else emptyList()
         // Ledger is committed before arming alarms so immediate receivers can validate their identity.
         prefs.edit().putStringSet("ids", planned.map { it.id }.toSet()).putInt("count", planned.size).commit()
@@ -56,9 +56,9 @@ object SystemCoordinator {
         val app = context.applicationContext as HelperApplication
         val store = app.store
         val account = store.account()
-        val enabled = account.isNotBlank() && app.campusRepository.reminders(account).courseProgress
+        val enabled = account.isNotBlank() && app.campusRepository.reminders(account).progressEnabled
         val table = if (enabled) store.table(account, store.currentSemester(account), TableKind.STUDENT) else null
-        CourseProgressNotifications.synchronize(context, account, table, enabled, intent)
+        CourseProgressNotifications.synchronize(context, account, table, if (enabled) app.campusRepository.reminders(account) else ReminderSettings(), intent)
     } }
     fun maintain(context: Context) {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork("campus-maintenance", ExistingPeriodicWorkPolicy.KEEP, PeriodicWorkRequestBuilder<MaintenanceWorker>(12, TimeUnit.HOURS).build())
