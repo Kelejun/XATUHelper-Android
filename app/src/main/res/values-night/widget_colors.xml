@@ -1,1 +1,20 @@
-<resources><color name="widget_surface">#263B62</color><color name="widget_text">#DFE7FF</color></resources>
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_surface">#1E2128</color>
+    <color name="widget_surface_stroke">#22FFFFFF</color>
+    <color name="widget_text">#F1F3F8</color>
+    <color name="widget_text_secondary">#A2A8B6</color>
+    <color name="widget_divider">#22FFFFFF</color>
+    <color name="widget_tonal_surface">#1CFFFFFF</color>
+    <color name="widget_tonal_surface_active">#385B9BFF</color>
+
+    <color name="widget_accent_course">#5B9BFF</color>
+    <color name="widget_accent_holiday">#00D4E6</color>
+    <color name="widget_accent_exam">#7B86FF</color>
+    <color name="widget_accent_electricity">#FFA028</color>
+
+    <color name="widget_tint_course">#2A5B9BFF</color>
+    <color name="widget_tint_holiday">#2A00D4E6</color>
+    <color name="widget_tint_exam">#2C7B86FF</color>
+    <color name="widget_tint_electricity">#2CFFA028</color>
+</resources>
