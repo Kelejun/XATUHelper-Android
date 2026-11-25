@@ -6,6 +6,7 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -24,8 +25,27 @@ object SystemCoordinator {
     fun notificationsAllowed(context: Context) = (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) && NotificationManagerCompat.from(context).areNotificationsEnabled()
     fun alarmIntent(context: Context, id: String, reminder: Reminder? = null, account: String = ""): PendingIntent {
         val intent = Intent(context, ReminderReceiver::class.java).setAction("com.xatune.app.REMINDER").setData(Uri.parse("xatu://reminder/${Uri.encode(id)}"))
-        if (reminder != null) intent.putExtra("title", reminder.title).putExtra("body", reminder.body).putExtra("page", reminder.page).putExtra("account", account).putExtra("id", id)
+        if (reminder != null) {
+            intent.putExtra("title", reminder.title).putExtra("body", reminder.body).putExtra("page", reminder.page).putExtra("account", account).putExtra("id", id)
+            reminder.expiresAt?.let { intent.putExtra(ClassNotificationExpiry.EXTRA_ENDS_AT, it) }
+        }
         return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+    fun clearExpiredClassNotifications(context: Context, nowMillis: Long = System.currentTimeMillis()) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        runCatching { manager.activeNotifications }.getOrDefault(emptyArray()).forEach { active ->
+            val extras = active.notification?.extras
+            val explicit = if (extras?.containsKey(ClassNotificationExpiry.EXTRA_ENDS_AT) == true) {
+                extras.getLong(ClassNotificationExpiry.EXTRA_ENDS_AT, -1L)
+            } else {
+                null
+            }
+            val body = extras?.getCharSequence(Notification.EXTRA_BIG_TEXT)
+                ?: extras?.getCharSequence(Notification.EXTRA_TEXT)
+            if (ClassNotificationExpiry.isExpired(active.tag, explicit, body, nowMillis)) {
+                manager.cancel(active.tag, active.id)
+            }
+        }
     }
     suspend fun synchronize(context: Context) = withContext(Dispatchers.IO) { mutex.withLock {
         val app = context.applicationContext as HelperApplication
@@ -73,7 +93,10 @@ class ReminderReceiver : BroadcastReceiver() {
                 val channel = if (id.startsWith("class|")) "classes" else "exams"
                 manager.createNotificationChannel(NotificationChannel(channel, if (channel == "classes") "上课提醒" else "考试提醒", NotificationManager.IMPORTANCE_HIGH))
                 val launch = PendingIntent.getActivity(context, id.hashCode(), SystemCoordinator.launchIntent(context, intent.getStringExtra("page") ?: "timetable").setData(Uri.parse("xatu://notice/${Uri.encode(id)}")), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-                val notification = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification).setContentTitle(intent.getStringExtra("title")).setContentText(intent.getStringExtra("body")).setStyle(NotificationCompat.BigTextStyle().bigText(intent.getStringExtra("body"))).setContentIntent(launch).setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build()
+                val endsAt = intent.getLongExtra(ClassNotificationExpiry.EXTRA_ENDS_AT, -1L)
+                val builder = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification).setContentTitle(intent.getStringExtra("title")).setContentText(intent.getStringExtra("body")).setStyle(NotificationCompat.BigTextStyle().bigText(intent.getStringExtra("body"))).setContentIntent(launch).setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                if (endsAt > 0L) builder.addExtras(Bundle().apply { putLong(ClassNotificationExpiry.EXTRA_ENDS_AT, endsAt) })
+                val notification = builder.build()
                 try { manager.notify(id, id.hashCode(), notification) } catch (_: SecurityException) { }
             } finally { pending.finish() }
         }

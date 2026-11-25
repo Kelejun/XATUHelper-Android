@@ -166,4 +166,35 @@ class CampusTest {
         val exam = Exam("e","考试课","c","","2026-11-01 09:00","教1","","")
         assertTrue(ReminderPlanner.plan(null, listOf(exam), ReminderSettings(exams = true), now).isEmpty())
     }
+    @Test fun classRemindersRecordBlockEndTimestampIncludingBuildingThree() {
+        val morning = ZonedDateTime.of(2026, 11, 2, 8, 0, 0, 0, SchoolZone)
+        val courses = listOf("教3-201", "教1-201").flatMapIndexed { index, room ->
+            (3..4).map { period -> Course("c$index", "课程$index", "", room, 1, period, listOf(1)) }
+        }
+        val table = Timetable("fixture", Semester("s", "学期"), TableKind.STUDENT, courses, 12, "2026-11-02", 0)
+        val exam = Exam("e", "考试课", "c", "", "2026-11-04 09:00–11:00", "教1", "12", "")
+        val planned = ReminderPlanner.plan(table, listOf(exam), ReminderSettings(classes = true, exams = true), morning)
+        val special = planned.single { "教3-201" in it.body }
+        val ordinary = planned.single { "教1-201" in it.body }
+        assertEquals(ZonedDateTime.of(2026, 11, 2, 11, 40, 0, 0, SchoolZone).toInstant().toEpochMilli(), special.expiresAt)
+        assertEquals(ZonedDateTime.of(2026, 11, 2, 12, 0, 0, 0, SchoolZone).toInstant().toEpochMilli(), ordinary.expiresAt)
+        assertTrue(planned.filter { !it.id.startsWith("class|") }.all { it.expiresAt == null })
+    }
+    @Test fun expiredClassNotificationDetectionSupportsExplicitAndLegacyNotifications() {
+        val tag = "class|s|c1|1|3|教3-201|老师|2026-11-02"
+        val endsAt = ZonedDateTime.of(2026, 11, 2, 11, 40, 0, 0, SchoolZone).toInstant().toEpochMilli()
+        val beforeStart = ZonedDateTime.of(2026, 11, 2, 10, 0, 0, 0, SchoolZone).toInstant().toEpochMilli()
+        val inClass = ZonedDateTime.of(2026, 11, 2, 11, 39, 59, 0, SchoolZone).toInstant().toEpochMilli()
+        val afterClass = ZonedDateTime.of(2026, 11, 2, 11, 40, 1, 0, SchoolZone).toInstant().toEpochMilli()
+        assertFalse(ClassNotificationExpiry.isExpired(tag, endsAt, "10:10–11:40 · 教3-201", beforeStart))
+        assertFalse(ClassNotificationExpiry.isExpired(tag, endsAt, "10:10–11:40 · 教3-201", inClass))
+        assertTrue(ClassNotificationExpiry.isExpired(tag, endsAt, "10:10–11:40 · 教3-201", endsAt))
+        assertTrue(ClassNotificationExpiry.isExpired(tag, endsAt, "10:10–11:40 · 教3-201", afterClass))
+        // Legacy notifications without explicit timestamp recover end time from tag date and body range.
+        assertFalse(ClassNotificationExpiry.isExpired(tag, null, "10:10–11:40 · 教3-201", inClass))
+        assertTrue(ClassNotificationExpiry.isExpired(tag, null, "10:10–11:40 · 教3-201", endsAt))
+        // Exam notifications and malformed tags are never cleared.
+        assertFalse(ClassNotificationExpiry.isExpired("e|before", endsAt, "09:00–11:00 · 教1", afterClass))
+        assertFalse(ClassNotificationExpiry.isExpired("class|s|bad", null, "no time", afterClass))
+    }
 }

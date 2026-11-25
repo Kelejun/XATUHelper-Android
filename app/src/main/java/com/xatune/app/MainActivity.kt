@@ -20,7 +20,11 @@ class MainActivity : ComponentActivity() {
         helperModel.openDestination(intent.getStringExtra("open_page"))
         intent.removeExtra("open_page")
     }
-    override fun onStart() { super.onStart(); if (::helperModel.isInitialized) helperModel.checkUpdates() }
+    override fun onStart() {
+        super.onStart()
+        com.xatune.app.platform.SystemCoordinator.clearExpiredClassNotifications(applicationContext)
+        if (::helperModel.isInitialized) helperModel.checkUpdates()
+    }
     override fun onStop() { if (::helperModel.isInitialized) helperModel.pauseAutomaticUpdates(); super.onStop() }
     override fun onResume() { super.onResume(); if (::helperModel.isInitialized) helperModel.resume() }
     override fun onCreate(savedInstanceState: Bundle?) {

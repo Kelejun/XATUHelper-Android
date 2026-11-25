@@ -46,14 +46,32 @@ fun nextCampusEvent(calendar: SchoolCalendar?, today: LocalDate = schoolToday())
 }
 
 data class ReminderSettings(val classes: Boolean = false, val classLead: Int = 30, val exams: Boolean = false, val eve: Boolean = true, val eveMinutes: Int = 1260, val morning: Boolean = true, val morningMinutes: Int = 480, val before: Boolean = true, val examLead: Int = 30)
-data class Reminder(val id: String, val at: Long, val title: String, val body: String, val page: String)
+data class Reminder(val id: String, val at: Long, val title: String, val body: String, val page: String, val expiresAt: Long? = null)
+object ClassNotificationExpiry {
+    const val EXTRA_ENDS_AT = "class_ends_at"
+    private val timeRangePattern = Regex("""\b(\d{1,2}:\d{2})\s*[–—\-~至]\s*(\d{1,2}:\d{2})\b""")
+
+    fun resolveEndsAt(tag: String?, explicitEndsAt: Long?, body: CharSequence?): Long? {
+        if (tag == null || !tag.startsWith("class|")) return null
+        if (explicitEndsAt != null && explicitEndsAt > 0L) return explicitEndsAt
+        val date = runCatching { LocalDate.parse(tag.substringAfterLast('|', "")) }.getOrNull() ?: return null
+        val endText = body?.let { timeRangePattern.find(it)?.groupValues?.getOrNull(2) } ?: return null
+        val endTime = runCatching { LocalTime.parse(endText.padStart(5, '0')) }.getOrNull() ?: return null
+        return date.atTime(endTime).atZone(SchoolZone).toInstant().toEpochMilli()
+    }
+
+    fun isExpired(tag: String?, explicitEndsAt: Long?, body: CharSequence?, nowMillis: Long): Boolean {
+        val endsAt = resolveEndsAt(tag, explicitEndsAt, body) ?: return false
+        return nowMillis >= endsAt
+    }
+}
 object ReminderPlanner {
     fun plan(table: Timetable?, exams: List<Exam>, options: ReminderSettings, now: ZonedDateTime = ZonedDateTime.now(SchoolZone)): List<Reminder> {
         val result = mutableListOf<Reminder>()
         val limit = now.plusDays(7).toInstant().toEpochMilli()
-        fun add(id: String, time: ZonedDateTime, title: String, body: String, page: String) {
+        fun add(id: String, time: ZonedDateTime, title: String, body: String, page: String, expiresAt: Long? = null) {
             val at = time.toInstant().toEpochMilli()
-            if (at > now.toInstant().toEpochMilli() && at <= limit) result.add(Reminder(id, at, title, body, page))
+            if (at > now.toInstant().toEpochMilli() && at <= limit) result.add(Reminder(id, at, title, body, page, expiresAt))
         }
         if (options.classes && table?.kind == TableKind.STUDENT) {
             val monday = LocalDate.parse(table.monday)
@@ -61,8 +79,11 @@ object ReminderPlanner {
                 val day = now.toLocalDate().plusDays(offset.toLong())
                 val week = Math.floorDiv(ChronoUnit.DAYS.between(monday, day), 7).toInt() + 1
                 if (week in 1..30) blocksFor(table.courses, week).filter { it.day == day.dayOfWeek.value }.forEach { block ->
-                    val start = LocalTime.parse(Periods.range(block).substringBefore('–'))
-                    add("class|${table.semester.id}|${block.id}|$day", day.atTime(start).atZone(SchoolZone).minusMinutes(options.classLead.coerceIn(0, 180).toLong()), "下一节课：${block.name}", "${Periods.range(block)} · ${block.room}", "timetable")
+                    val range = Periods.range(block)
+                    val start = LocalTime.parse(range.substringBefore('–'))
+                    val end = LocalTime.parse(range.substringAfter('–'))
+                    val endsAt = day.atTime(end).atZone(SchoolZone).toInstant().toEpochMilli()
+                    add("class|${table.semester.id}|${block.id}|$day", day.atTime(start).atZone(SchoolZone).minusMinutes(options.classLead.coerceIn(0, 180).toLong()), "下一节课：${block.name}", "$range · ${block.room}", "timetable", endsAt)
                 }
             }
         }
