@@ -46,6 +46,32 @@ fun nextCampusEvent(calendar: SchoolCalendar?, today: LocalDate = schoolToday())
 }
 
 data class ReminderSettings(val classes: Boolean = false, val classLead: Int = 30, val exams: Boolean = false, val eve: Boolean = true, val eveMinutes: Int = 1260, val morning: Boolean = true, val morningMinutes: Int = 480, val before: Boolean = true, val examLead: Int = 30)
+enum class ReminderPromptKind { CLASSES, EXAMS }
+object ReminderPrompt {
+    fun apply(
+        current: ReminderSettings,
+        kind: ReminderPromptKind,
+        confirm: Boolean,
+        draft: ReminderSettings
+    ): ReminderSettings {
+        if (!confirm) return current
+        return when (kind) {
+            ReminderPromptKind.CLASSES -> current.copy(
+                classes = true,
+                classLead = draft.classLead.coerceIn(0, 180)
+            )
+            ReminderPromptKind.EXAMS -> current.copy(
+                exams = true,
+                eve = draft.eve,
+                eveMinutes = draft.eveMinutes.coerceIn(0, 1439),
+                morning = draft.morning,
+                morningMinutes = draft.morningMinutes.coerceIn(0, 1439),
+                before = draft.before,
+                examLead = draft.examLead.coerceIn(0, 180)
+            )
+        }
+    }
+}
 data class Reminder(val id: String, val at: Long, val title: String, val body: String, val page: String, val expiresAt: Long? = null)
 object ClassNotificationExpiry {
     const val EXTRA_ENDS_AT = "class_ends_at"

@@ -197,4 +197,30 @@ class CampusTest {
         assertFalse(ClassNotificationExpiry.isExpired("e|before", endsAt, "09:00–11:00 · 教1", afterClass))
         assertFalse(ClassNotificationExpiry.isExpired("class|s|bad", null, "no time", afterClass))
     }
+    @Test fun classAndExamReminderPromptsStayIndependentAndSaveOnlyOnConfirm() {
+        val initial = ReminderSettings(classes = false, classLead = 30, exams = false, eve = true, morning = true, before = true, examLead = 30)
+
+        // Declining class prompt discards edited lead time and leaves both switches off.
+        val declinedClass = ReminderPrompt.apply(initial, ReminderPromptKind.CLASSES, confirm = false, draft = initial.copy(classLead = 15))
+        assertEquals(initial, declinedClass)
+
+        // Confirming class prompt enables only class reminders with chosen lead time; exam reminders stay untouched.
+        val confirmedClass = ReminderPrompt.apply(initial, ReminderPromptKind.CLASSES, confirm = true, draft = initial.copy(classLead = 15, exams = true, examLead = 10))
+        assertTrue(confirmedClass.classes)
+        assertEquals(15, confirmedClass.classLead)
+        assertFalse(confirmedClass.exams)
+        assertEquals(30, confirmedClass.examLead)
+
+        // Declining exam prompt discards edited exam options.
+        val declinedExam = ReminderPrompt.apply(confirmedClass, ReminderPromptKind.EXAMS, confirm = false, draft = confirmedClass.copy(eve = false, examLead = 45))
+        assertEquals(confirmedClass, declinedExam)
+
+        // Confirming exam prompt enables exam reminders with chosen options without altering class settings.
+        val confirmedExam = ReminderPrompt.apply(confirmedClass, ReminderPromptKind.EXAMS, confirm = true, draft = confirmedClass.copy(classes = false, classLead = 60, eve = false, examLead = 45))
+        assertTrue(confirmedExam.classes)
+        assertEquals(15, confirmedExam.classLead)
+        assertTrue(confirmedExam.exams)
+        assertFalse(confirmedExam.eve)
+        assertEquals(45, confirmedExam.examLead)
+    }
 }

@@ -44,12 +44,19 @@ class CampusController(private val repository: CampusRepository, private val sco
             finally { if (state.value.account == account) mutable.update { it.copy(busy = false) } }
         }
     }
-    fun acknowledgeReminders(classes: Boolean, enable: Boolean = false) = action { account ->
+    fun acknowledgeReminders(classes: Boolean, enable: Boolean = false, draft: ReminderSettings? = null) = action { account ->
+        val kind = if (classes) ReminderPromptKind.CLASSES else ReminderPromptKind.EXAMS
         if (classes) repository.store.extra("promptedClasses:$account", true)
-        repository.store.extra("promptedExams:$account", true)
-        val settings = state.value.reminders.let { if (enable) it.copy(classes = it.classes || classes, exams = true) else it }
+        else repository.store.extra("promptedExams:$account", true)
+        val settings = ReminderPrompt.apply(state.value.reminders, kind, enable, draft ?: state.value.reminders)
         if (enable) repository.store.extra("reminders:$account", settings)
-        mutable.update { it.copy(promptedClasses = it.promptedClasses || classes, promptedExams = true, reminders = settings) }
+        mutable.update {
+            it.copy(
+                promptedClasses = it.promptedClasses || classes,
+                promptedExams = it.promptedExams || !classes,
+                reminders = settings
+            )
+        }
         if (enable) sync()
     }
     fun dismissError() { mutable.update { it.copy(error = null) } }

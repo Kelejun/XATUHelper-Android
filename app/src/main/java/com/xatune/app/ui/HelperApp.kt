@@ -215,15 +215,53 @@ import java.time.format.DateTimeFormatter
     val offerClasses = page == null && tab == 1 && !campusState.promptedClasses
     val offerExams = page == "exams" && !campusState.promptedExams
     if (!state.demo && campusState.account == state.account && !campusState.busy && (offerClasses || offerExams)) {
-        AlertDialog(onDismissRequest = { model.campus?.acknowledgeReminders(offerClasses) },
-            title = { Text(if (offerClasses) "上课与考试提醒" else "考试提醒") },
-            text = { Text("使用本机缓存安排未来七天的提醒；默认提前 30 分钟，考试前一天 21:00、当天 08:00。可在提醒设置中调整。") },
+        var draft by remember(campusState.account, offerClasses, offerExams) { mutableStateOf(campusState.reminders) }
+        var leadMenu by remember(campusState.account, offerClasses, offerExams) { mutableStateOf(false) }
+        val leadOptions = listOf(5, 10, 15, 20, 30, 45, 60)
+        AlertDialog(
+            onDismissRequest = { model.campus?.acknowledgeReminders(offerClasses, enable = false) },
+            title = { Text(if (offerClasses) "上课提醒" else "考试提醒") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (offerClasses) {
+                        Text("使用当前学期的学生课表缓存安排课前通知，可在提醒设置中随时调整。")
+                        Box {
+                            OutlinedButton(onClick = { leadMenu = true }) { Text("上课前 ${draft.classLead} 分钟") }
+                            DropdownMenu(expanded = leadMenu, onDismissRequest = { leadMenu = false }) {
+                                leadOptions.forEach { minutes ->
+                                    DropdownMenuItem(text = { Text("$minutes 分钟") }, onClick = {
+                                        leadMenu = false
+                                        draft = draft.copy(classLead = minutes)
+                                    })
+                                }
+                            }
+                        }
+                    } else {
+                        Text("根据当前学期的考试安排发送考前通知，可在提醒设置中随时调整。")
+                        ToggleRow("前一天提醒", "${"%02d:%02d".format(draft.eveMinutes / 60, draft.eveMinutes % 60)}", draft.eve, { draft = draft.copy(eve = it) })
+                        ToggleRow("当天早晨提醒", "${"%02d:%02d".format(draft.morningMinutes / 60, draft.morningMinutes % 60)}", draft.morning, { draft = draft.copy(morning = it) })
+                        ToggleRow("考前提醒", "开考前 ${draft.examLead} 分钟", draft.before, { draft = draft.copy(before = it) })
+                        if (draft.before) Box {
+                            OutlinedButton(onClick = { leadMenu = true }) { Text("开考前 ${draft.examLead} 分钟") }
+                            DropdownMenu(expanded = leadMenu, onDismissRequest = { leadMenu = false }) {
+                                leadOptions.forEach { minutes ->
+                                    DropdownMenuItem(text = { Text("$minutes 分钟") }, onClick = {
+                                        leadMenu = false
+                                        draft = draft.copy(examLead = minutes)
+                                    })
+                                }
+                            }
+                        }
+                    }
+                }
+            },
             confirmButton = { TextButton(onClick = {
-                model.campus?.acknowledgeReminders(offerClasses, enable = true)
+                model.campus?.acknowledgeReminders(offerClasses, enable = true, draft = draft)
                 if (android.os.Build.VERSION.SDK_INT >= 33 && !com.xatune.app.platform.SystemCoordinator.notificationsAllowed(reminderContext))
                     reminderPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }) { Text("开启提醒") } },
-            dismissButton = { TextButton(onClick = { model.campus?.acknowledgeReminders(offerClasses) }) { Text("先不用") } })
+            dismissButton = { TextButton(onClick = { model.campus?.acknowledgeReminders(offerClasses, enable = false) }) { Text("先不用") } }
+        )
     }
     selectedAnnouncement?.let { record ->
         announcements?.let { center -> AnnouncementDetail(record.announcement, record.receivedAt, center) { center.acknowledge(record); selectedAnnouncement = null } }
