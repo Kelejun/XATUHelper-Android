@@ -1,16 +1,25 @@
 package com.xatune.app.model
 
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZonedDateTime
 
 enum class AcademicKind(val title: String, val hours: Long) {
     EXAMS("考试安排", 240), GRADES("成绩", 216), PLAN("学业完成情况", 192)
 }
+
+private val examTimeClockPattern = Regex("""(?<!\d)(\d{1,2})\s*[:：]\s*(\d{2})(?!\d)""")
+
 data class Exam(val id: String, val course: String, val code: String, val name: String, val time: String, val room: String, val seat: String, val note: String) {
-    /** Match iOS: calendar days remaining, today stays visible all day; no label for past/unknown dates. */
+    /** Match iOS: calendar days remaining, today stays visible until ended; no label for past/ended/unknown dates. */
     fun remainingText(anchor: LocalDate = schoolToday(), today: LocalDate = schoolToday()): String {
         val day = date(anchor) ?: return ""
         val days = java.time.temporal.ChronoUnit.DAYS.between(today, day)
         return when { days > 0 -> "还有 $days 天"; days == 0L -> "今天"; else -> "" }
+    }
+    fun remainingText(anchor: LocalDate = schoolToday(), now: ZonedDateTime): String {
+        if (isEnded(now, anchor)) return ""
+        return remainingText(anchor, now.toLocalDate())
     }
     fun date(anchor: LocalDate = schoolToday()): LocalDate? {
         val full = Regex("""(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})""").find(time)
@@ -20,13 +29,46 @@ data class Exam(val id: String, val course: String, val code: String, val name: 
         val year = anchor.year + if (month < 8 && anchor.monthValue >= 8) 1 else if (month >= 8 && anchor.monthValue < 8) -1 else 0
         return runCatching { LocalDate.of(year, month, short.groupValues[2].toInt()) }.getOrNull()
     }
+    fun clockTimes(): List<LocalTime> = examTimeClockPattern.findAll(time).mapNotNull { match ->
+        runCatching { LocalTime.of(match.groupValues[1].toInt(), match.groupValues[2].toInt()) }.getOrNull()
+    }.toList()
+    fun startTime(): LocalTime? = clockTimes().firstOrNull()
+    fun endTime(): LocalTime? {
+        val times = clockTimes()
+        val start = times.firstOrNull() ?: return null
+        return times.drop(1).firstOrNull { it.isAfter(start) }
+    }
+    fun startAt(anchor: LocalDate = schoolToday()): ZonedDateTime? {
+        val day = date(anchor) ?: return null
+        return day.atTime(startTime() ?: LocalTime.MIDNIGHT).atZone(SchoolZone)
+    }
+    fun endAt(anchor: LocalDate = schoolToday()): ZonedDateTime? {
+        val day = date(anchor) ?: return null
+        val end = endTime()
+        return if (end != null) day.atTime(end).atZone(SchoolZone) else day.plusDays(1).atStartOfDay(SchoolZone)
+    }
+    fun isEnded(now: ZonedDateTime = ZonedDateTime.now(SchoolZone), anchor: LocalDate = schoolToday()): Boolean {
+        val end = endAt(anchor) ?: return false
+        return !now.isBefore(end)
+    }
+    fun isUpcoming(now: ZonedDateTime = ZonedDateTime.now(SchoolZone), anchor: LocalDate = schoolToday()): Boolean {
+        val end = endAt(anchor) ?: return false
+        return end.isAfter(now)
+    }
 }
 /** iOS ordering: future dates ascending, finished dates descending, unknown dates last. */
 fun orderedExams(exams: List<Exam>, anchor: LocalDate, today: LocalDate = schoolToday()): List<Exam> {
     val upcoming = exams.filter { it.date(anchor)?.let { date -> date >= today } == true }
-        .sortedWith(compareBy({ it.date(anchor) }, { it.time }))
+        .sortedWith(compareBy({ it.date(anchor) }, { it.startTime() ?: LocalTime.MAX }, { it.time }))
     val bottom = exams.filter { it.date(anchor)?.let { date -> date < today } != false }
-        .sortedWith(compareBy<Exam> { it.date(anchor) == null }.thenByDescending { it.date(anchor) }.thenBy { it.time })
+        .sortedWith(compareBy<Exam> { it.date(anchor) == null }.thenByDescending { it.date(anchor) }.thenBy { it.startTime() ?: LocalTime.MAX }.thenBy { it.time })
+    return upcoming + bottom
+}
+fun orderedExams(exams: List<Exam>, anchor: LocalDate, now: ZonedDateTime): List<Exam> {
+    val upcoming = exams.filter { it.isUpcoming(now, anchor) }
+        .sortedWith(compareBy({ it.startAt(anchor) }, { it.time }))
+    val bottom = exams.filter { !it.isUpcoming(now, anchor) }
+        .sortedWith(compareBy<Exam> { it.date(anchor) == null }.thenByDescending { it.date(anchor) }.thenBy { it.startTime() ?: LocalTime.MAX }.thenBy { it.time })
     return upcoming + bottom
 }
 fun matchesCourse(name: String, code: String, query: String): Boolean {

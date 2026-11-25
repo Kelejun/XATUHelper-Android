@@ -36,6 +36,35 @@ class FinalParityTest {
         assertEquals(listOf("today-early", "today-late", "later", "recent", "old", "unknown"),
             orderedExams(exams, monday, LocalDate.of(2027, 1, 1)).map { it.id })
     }
+    @Test fun sameDayEndedExamsMoveToFinishedAndDropCountdown() {
+        fun exam(id: String, time: String) = Exam(id, id, "", "", time, "教1-101", "1", "")
+        val anchor = LocalDate.of(2026, 9, 1)
+        val morning = exam("morning", "2026-11-25 09:00-11:00")
+        val afternoon = exam("afternoon", "2026-11-25 14:30–16:30")
+        val startOnly = exam("startOnly", "2026-11-25 19:00")
+        val nextDay = exam("nextDay", "2026-11-26 09:00-11:00")
+        val undated = exam("undated", "时间待定")
+        val all = listOf(nextDay, undated, afternoon, startOnly, morning)
+
+        val noon = LocalDate.of(2026, 11, 25).atTime(11, 0).atZone(SchoolZone)
+        assertTrue(morning.isEnded(noon, anchor))
+        assertFalse(morning.isUpcoming(noon, anchor))
+        assertEquals("", morning.remainingText(anchor, noon))
+        assertEquals("今天", afternoon.remainingText(anchor, noon))
+        assertEquals("还有 1 天", nextDay.remainingText(anchor, noon))
+        assertEquals(
+            listOf("afternoon", "startOnly", "nextDay", "morning", "undated"),
+            orderedExams(all, anchor, noon).map { it.id }
+        )
+
+        val evening = LocalDate.of(2026, 11, 25).atTime(20, 42).atZone(SchoolZone)
+        assertTrue(afternoon.isEnded(evening, anchor))
+        assertTrue(startOnly.isUpcoming(evening, anchor))
+        assertEquals(
+            listOf("startOnly", "nextDay", "morning", "afternoon", "undated"),
+            orderedExams(all, anchor, evening).map { it.id }
+        )
+    }
     @Test fun searchesTrimWhitespaceAndCalibrationUsesThisCalendarWeek() {
         assertTrue(matchesCourse("程序设计", "CS01", "  程序  "))
         assertTrue(matchesCourse("程序设计", "CS01", " cs01 "))

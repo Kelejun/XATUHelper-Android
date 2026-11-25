@@ -325,10 +325,11 @@ import java.time.format.DateTimeFormatter
     val week = table?.let { weekOf(LocalDate.parse(it.monday), now.toLocalDate()) } ?: state.week
     val current = table != null && table.semester.id == state.currentSemester
     val schedule = homeSchedule(table, current, now.toLocalDate(), now.toLocalTime())
+    val anchor = examAnchor(state)
     val nextExam = state.academic[academicKey(AcademicKind.EXAMS, state.currentSemester)]?.data?.exams
-        ?.filter { it.date(examAnchor(state))?.let { day -> day >= now.toLocalDate() } == true }
-        ?.sortedWith(compareBy({ it.date(examAnchor(state)) }, { it.time }))?.firstOrNull()
-    val examDays = nextExam?.date(examAnchor(state))?.let { java.time.temporal.ChronoUnit.DAYS.between(now.toLocalDate(), it) }
+        ?.filter { it.isUpcoming(now, anchor) }
+        ?.sortedWith(compareBy({ it.startAt(anchor) }, { it.time }))?.firstOrNull()
+    val examDays = nextExam?.date(anchor)?.let { java.time.temporal.ChronoUnit.DAYS.between(now.toLocalDate(), it) }
     val status = buildList {
         if (current && week > 0) add("第 $week 周")
         add(if (schedule.remaining == 0) "今天没课了" else "今天还有 ${schedule.remaining} 节课")

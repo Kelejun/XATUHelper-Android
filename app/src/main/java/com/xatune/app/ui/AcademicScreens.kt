@@ -95,26 +95,27 @@ private fun updated(at: Long): String = java.time.Instant.ofEpochMilli(at).atZon
 
 @Composable private fun ExamList(exams: List<Exam>, semester: Semester?) {
     val anchor = runCatching { LocalDate.parse(semester?.startDate?.take(10)) }.getOrNull() ?: schoolToday()
-    var today by remember { mutableStateOf(schoolToday()) }
-    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { today = schoolToday() }
-    LaunchedEffect(Unit) { while (true) { today = schoolToday(); kotlinx.coroutines.delay(30_000) } }
-    val sorted = remember(exams, anchor, today) { orderedExams(exams, anchor, today) }
+    var now by remember { mutableStateOf(java.time.ZonedDateTime.now(SchoolZone)) }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { now = java.time.ZonedDateTime.now(SchoolZone) }
+    LaunchedEffect(Unit) { while (true) { now = java.time.ZonedDateTime.now(SchoolZone); kotlinx.coroutines.delay(30_000) } }
+    val sorted = remember(exams, anchor, now) { orderedExams(exams, anchor, now) }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.testTag("examsList")) {
         if (sorted.isEmpty()) item { EmptyMessage("当前学期暂无考试安排", "学校公布安排后，可在这里刷新查看。") }
         items(sorted, key = { it.id }) { exam ->
             val index = sorted.indexOf(exam)
             val date = exam.date(anchor)
-            val bottom = date == null || date < today
-            val previous = sorted.getOrNull(index - 1)?.date(anchor)
-            if (bottom && (index == 0 || previous != null && previous >= today)) Text("已结束 / 待定", style = MaterialTheme.typography.titleMedium)
-            else if (!bottom && (index == 0 || previous != date)) Text("$date · ${sorted.count { it.date(anchor) == date }} 场考试", style = MaterialTheme.typography.titleMedium)
+            val bottom = !exam.isUpcoming(now, anchor)
+            val previousExam = sorted.getOrNull(index - 1)
+            val previousBottom = previousExam?.let { !it.isUpcoming(now, anchor) } ?: false
+            val previousDate = previousExam?.date(anchor)
+            if (bottom && (index == 0 || !previousBottom)) Text("已结束 / 待定", style = MaterialTheme.typography.titleMedium)
+            else if (!bottom && (index == 0 || previousBottom || previousDate != date)) Text("$date · ${sorted.count { it.isUpcoming(now, anchor) && it.date(anchor) == date }} 场考试", style = MaterialTheme.typography.titleMedium)
             ContentCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val date = exam.date(anchor)
                     if (date != null) Text(date.toString(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(exam.course.ifBlank { exam.name.ifBlank { "考试" } }, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                        val remaining = exam.remainingText(anchor, today)
+                        val remaining = exam.remainingText(anchor, now)
                         if (remaining.isNotEmpty()) Text(remaining, Modifier.testTag("examCountdown:${exam.id}"),
                             style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

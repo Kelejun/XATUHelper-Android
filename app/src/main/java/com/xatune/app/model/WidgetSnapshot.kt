@@ -277,8 +277,6 @@ data class WidgetExamSnapshot(
     }
 }
 
-private val examClockPattern = Regex("""(?<!\d)(\d{1,2})[:：](\d{2})(?!\d)""")
-
 fun widgetExamSnapshot(
     account: String,
     semesterId: String,
@@ -289,11 +287,8 @@ fun widgetExamSnapshot(
     if (account.isBlank()) return WidgetExamSnapshot("", "", 0L, emptyList())
     val entries = exams.mapNotNull { exam ->
         val date = exam.date(anchor) ?: return@mapNotNull null
-        val times = examClockPattern.findAll(exam.time).mapNotNull { match ->
-            runCatching { LocalTime.of(match.groupValues[1].toInt(), match.groupValues[2].toInt()) }.getOrNull()
-        }.toList()
-        val start = times.firstOrNull()
-        val end = times.getOrNull(1)?.takeIf { start == null || !it.isBefore(start) }
+        val start = exam.startTime()
+        val end = exam.endTime()
         WidgetExamEntry(
             id = exam.id,
             course = exam.course.trim(),
