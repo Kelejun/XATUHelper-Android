@@ -1,6 +1,0 @@
-<resources>
-    <color name="course_activity_surface">#F5F7FC</color>
-    <color name="course_activity_foreground">#1E2026</color>
-    <color name="course_activity_secondary">#5F6570</color>
-    <color name="course_activity_capsule">#DCE4F3</color>
-</resources>

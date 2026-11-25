@@ -31,7 +31,7 @@ object TimetableParser {
             val positions = Regex("""index\s*=\s*(\d+)\s*\*\s*unitCount\s*\+\s*(\d+)""").findAll(chunk).toList()
             if (positions.isEmpty()) throw ParseFailure()
             raw++
-            if (weeks.isEmpty() || isUntimedCourse(name, room)) return@forEachIndexed
+            if (weeks.isEmpty() || listOf("线上", "平台修读", "虚拟教室", "实践环节", "供选课参考").any { it in room } || "实践环节" in name) return@forEachIndexed
             positions.forEach { match ->
                 val day = match.groupValues[1].toInt() + 1
                 val period = match.groupValues[2].toInt() + 1

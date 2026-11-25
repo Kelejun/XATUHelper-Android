@@ -23,11 +23,6 @@ data class CourseBlock(val key: String, val name: String, val teacher: String, v
 data class Timetable(val account: String, val semester: Semester, val kind: TableKind, val courses: List<Course>, val unitCount: Int, val monday: String, val fetchedAt: Long)
 data class ParsedTable(val courses: List<Course>, val unitCount: Int, val rawCount: Int)
 
-private val untimedRoomLabels = listOf("线上", "平台修读", "虚拟教室", "实践环节", "供选课参考")
-
-fun isUntimedCourse(name: String, room: String): Boolean =
-    "实践环节" in name || untimedRoomLabels.any { it in room }
-
 // Filter by week BEFORE merging periods; otherwise alternating weeks create phantom lessons.
 fun blocksFor(courses: List<Course>, week: Int): List<CourseBlock> = courses.filter { week in it.weeks }
     .groupBy { listOf(it.key, it.day, it.room, it.teacher) }.values.flatMap { entries ->
