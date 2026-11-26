@@ -19,6 +19,14 @@ on:
         required: true
       ANDROID_KEY_PASSWORD:
         required: true
+      API_RELEASE_SSH_PRIVATE_KEY:
+        required: false
+      API_RELEASE_HOST:
+        required: false
+      API_RELEASE_USER:
+        required: false
+      API_RELEASE_HOST_KEY:
+        required: false
 
 permissions:
   contents: write
@@ -232,3 +240,51 @@ jobs:
           # 附件齐全后再公开，并让 /releases/latest/download/release.update.json 指向此版本。
           gh release edit "$TAG" --draft=false --latest \
             --title "XATune v${VERSION_NAME}" --notes-file release-assets/release-notes.md
+
+      - name: 上传正式版到 API 服务器并清理旧版本
+        if: inputs.channel == 'release' && github.event_name == 'workflow_dispatch'
+        env:
+          API_RELEASE_SSH_PRIVATE_KEY: ${{ secrets.API_RELEASE_SSH_PRIVATE_KEY }}
+          API_RELEASE_HOST: ${{ secrets.API_RELEASE_HOST }}
+          API_RELEASE_USER: ${{ secrets.API_RELEASE_USER }}
+          API_RELEASE_HOST_KEY: ${{ secrets.API_RELEASE_HOST_KEY }}
+          PREFIX: ${{ steps.apks.outputs.prefix }}
+          MANIFEST_NAME: ${{ steps.apks.outputs.manifest_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for name in API_RELEASE_SSH_PRIVATE_KEY API_RELEASE_HOST API_RELEASE_USER API_RELEASE_HOST_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          umask 077
+          SSH_KEY="$RUNNER_TEMP/api-release.key"
+          KNOWN_HOSTS="$RUNNER_TEMP/api-release.known_hosts"
+          trap 'rm -f "$SSH_KEY" "$KNOWN_HOSTS"' EXIT
+
+          printf '%s\n' "$API_RELEASE_SSH_PRIVATE_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          printf '%s\n' "$API_RELEASE_HOST_KEY" > "$KNOWN_HOSTS"
+
+          tar -C release-assets -cf - \
+            "${PREFIX}-arm64-v8a.apk" \
+            "${PREFIX}-armeabi-v7a.apk" \
+            "${PREFIX}-x86.apk" \
+            "${PREFIX}-x86_64.apk" \
+            SHA256SUMS \
+            "$MANIFEST_NAME" \
+          | ssh \
+              -T \
+              -i "$SSH_KEY" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o ConnectTimeout=15 \
+              -o ServerAliveInterval=15 \
+              -o ServerAliveCountMax=4 \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$KNOWN_HOSTS" \
+              "${API_RELEASE_USER}@${API_RELEASE_HOST}"
