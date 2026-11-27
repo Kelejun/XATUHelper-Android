@@ -27,6 +27,12 @@ class UpdateStateCodecTest {
         }""")
         assertEquals(UpdateSettings(channel = UpdateChannel.PRERELEASE, automatic = true), restored.settings)
         assertEquals(listOf(UpdateLog(1_000, false, UpdateChannel.RELEASE, false, "HTTP 503")), restored.logs)
+
+        val apiRestored = UpdateStateCodec.decode("""{
+            "settings":{"channel":"RELEASE","server":"API","automatic":true},
+            "logs":[]
+        }""")
+        assertEquals(UpdateSettings(channel = UpdateChannel.RELEASE, server = UpdateServer.API, automatic = true), apiRestored.settings)
     }
 
     @Test fun damagedEntriesAreDroppedWithoutLosingSettingsOrValidLogs() {

@@ -34,8 +34,25 @@ internal fun UpdateSettingsPanel(
         }
         Text("下载服务器", style = MaterialTheme.typography.titleSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = settings.server == UpdateServer.GITHUB, onClick = { onServer(UpdateServer.GITHUB) }, label = { Text("GitHub") })
-            FilterChip(selected = settings.server == UpdateServer.OTHER, onClick = { onServer(UpdateServer.OTHER) }, label = { Text("其他") })
+            FilterChip(
+                selected = settings.server == UpdateServer.GITHUB,
+                onClick = { onServer(UpdateServer.GITHUB) },
+                label = { Text("GitHub") },
+                modifier = Modifier.testTag("updateServer-github")
+            )
+            FilterChip(
+                selected = settings.server == UpdateServer.API,
+                enabled = settings.channel == UpdateChannel.RELEASE,
+                onClick = { onServer(UpdateServer.API) },
+                label = { Text("后端 API") },
+                modifier = Modifier.testTag("updateServer-api")
+            )
+            FilterChip(
+                selected = settings.server == UpdateServer.OTHER,
+                onClick = { onServer(UpdateServer.OTHER) },
+                label = { Text("其他") },
+                modifier = Modifier.testTag("updateServer-other")
+            )
         }
         if (settings.server == UpdateServer.OTHER) {
             var url by rememberSaveable { mutableStateOf(settings.repositoryUrl) }

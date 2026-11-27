@@ -37,7 +37,10 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
     private fun updateSettings(change: (UpdateSettings) -> UpdateSettings) {
         viewModelScope.launch { updates?.configure(change) }
     }
-    fun updateChannel(channel: UpdateChannel) = updateSettings { it.copy(channel = channel) }
+    fun updateChannel(channel: UpdateChannel) = updateSettings {
+        val server = if (channel == UpdateChannel.PRERELEASE && it.server == UpdateServer.API) UpdateServer.GITHUB else it.server
+        it.copy(channel = channel, server = server)
+    }
     fun updateServer(server: UpdateServer) = updateSettings { it.copy(server = server) }
     fun updateRepositoryUrl(url: String) = updateSettings { it.copy(repositoryUrl = url) }
     fun automaticUpdates(enabled: Boolean) {

@@ -20,6 +20,9 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 const val RELEASES_URL = "https://github.com/Kelejun/XATUHelper-Android/releases"
+const val API_BASE_URL = "https://api.xatune.cn"
+const val API_RELEASE_MANIFEST_URL = "$API_BASE_URL/download/release/release.update.json"
+const val API_RELEASE_DOWNLOAD_BASE_URL = "$API_BASE_URL/download/release"
 val pushChannel: String = BuildConfig.PUSH_CHANNEL
 
 enum class UpdateChannel(val value: String, val label: String) {
@@ -28,7 +31,7 @@ enum class UpdateChannel(val value: String, val label: String) {
         fun fromPushChannel(value: String) = entries.firstOrNull { it.value == value } ?: RELEASE
     }
 }
-enum class UpdateServer { GITHUB, OTHER }
+enum class UpdateServer { GITHUB, API, OTHER }
 data class UpdateSettings(
     val channel: UpdateChannel = UpdateChannel.fromPushChannel(pushChannel),
     val server: UpdateServer = UpdateServer.GITHUB,
@@ -36,7 +39,13 @@ data class UpdateSettings(
     val automatic: Boolean = false
 )
 data class UpdateLog(val at: Long, val automatic: Boolean, val channel: UpdateChannel, val success: Boolean, val detail: String)
-data class AppRelease(val version: String, val notes: String, val url: String, val versionCode: Int = 0)
+data class AppRelease(
+    val version: String,
+    val notes: String,
+    val url: String,
+    val versionCode: Int = 0,
+    val server: UpdateServer = UpdateServer.GITHUB
+)
 data class AppUpdateState(
     val settings: UpdateSettings = UpdateSettings(), val logs: List<UpdateLog> = emptyList(),
     val checking: Boolean = false, val message: String? = null, val offer: AppRelease? = null
@@ -47,6 +56,27 @@ fun updateManifestUrl(channel: UpdateChannel): String = when (channel) {
     UpdateChannel.RELEASE -> "$RELEASES_URL/latest/download/release.update.json"
     UpdateChannel.PRERELEASE -> "$RELEASES_URL/download/Prerelease/prerelease.update.json"
 }
+fun updateManifestUrl(channel: UpdateChannel, server: UpdateServer): String = when (server) {
+    UpdateServer.GITHUB -> updateManifestUrl(channel)
+    UpdateServer.API -> when (channel) {
+        UpdateChannel.RELEASE -> API_RELEASE_MANIFEST_URL
+        UpdateChannel.PRERELEASE -> throw IOException("后端 API 仅支持稳定版更新，请切换至稳定版或选择 GitHub")
+    }
+    UpdateServer.OTHER -> throw IOException("其他服务器暂未接入，请选择 GitHub 或后端 API")
+}
+fun apiReleaseArch(supportedAbis: List<String> = android.os.Build.SUPPORTED_ABIS?.toList().orEmpty()): String {
+    for (abi in supportedAbis) {
+        when (abi) {
+            "arm64-v8a" -> return "arm64"
+            "armeabi-v7a" -> return "arm"
+            "x86_64" -> return "x64"
+            "x86" -> return "x86"
+        }
+    }
+    return "arm64"
+}
+fun apiReleaseDownloadUrl(supportedAbis: List<String> = android.os.Build.SUPPORTED_ABIS?.toList().orEmpty()): String =
+    "$API_RELEASE_DOWNLOAD_BASE_URL/${apiReleaseArch(supportedAbis)}"
 
 interface UpdateStorage {
     suspend fun read(): AppUpdateState
@@ -70,9 +100,10 @@ class AppUpdateRepository(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
         .callTimeout(15, TimeUnit.SECONDS).retryOnConnectionFailure(false).build(),
-    private val endpoint: (UpdateChannel) -> String = ::updateManifestUrl,
+    private val endpoint: (UpdateChannel, UpdateServer) -> String = ::updateManifestUrl,
     private val currentVersionCode: Int = BuildConfig.VERSION_CODE,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val apiDownloadUrl: () -> String = { apiReleaseDownloadUrl() }
 ) {
     private val stateMutex = Mutex()
     private val checkMutex = Mutex()
@@ -106,25 +137,31 @@ class AppUpdateRepository(
         } ?: return@check
         try {
             val release = withContext(Dispatchers.IO) {
-                if (settings.server == UpdateServer.OTHER) throw IOException("其他服务器暂未接入，请选择 GitHub")
-                val json = JsonParser.parseString(downloadManifest(settings.channel)).asJsonObject
+                if (settings.server == UpdateServer.OTHER) throw IOException("其他服务器暂未接入，请选择 GitHub 或后端 API")
+                if (settings.server == UpdateServer.API && settings.channel != UpdateChannel.RELEASE) {
+                    throw IOException("后端 API 仅支持稳定版更新，请切换至稳定版或选择 GitHub")
+                }
+                val json = JsonParser.parseString(downloadManifest(settings.channel, settings.server)).asJsonObject
                 if (json.get("schemaVersion")?.asInt != 1 || json.get("applicationId")?.asString != "com.xatune.app")
                     throw IOException("更新清单格式不正确")
                 val expected = if (settings.channel == UpdateChannel.RELEASE) "stable" else "prerelease"
                 if (json.get("channel")?.asString != expected) throw IOException("更新清单渠道不匹配")
                 val code = json.get("versionCode")?.asInt?.takeIf { it > 0 } ?: throw IOException("清单缺少有效版本代码")
                 val version = json.get("versionName")?.asString?.takeIf { it.isNotBlank() } ?: throw IOException("清单缺少版本名称")
-                val url = if (settings.channel == UpdateChannel.PRERELEASE) "$RELEASES_URL/tag/Prerelease" else
-                    "$RELEASES_URL/tag/v$version"
-                AppRelease(version, json.get("notes")?.takeUnless { it.isJsonNull }?.asString.orEmpty().take(4000), url, code)
+                val url = when (settings.server) {
+                    UpdateServer.API -> apiDownloadUrl()
+                    else -> if (settings.channel == UpdateChannel.PRERELEASE) "$RELEASES_URL/tag/Prerelease" else "$RELEASES_URL/tag/v$version"
+                }
+                AppRelease(version, json.get("notes")?.takeUnless { it.isJsonNull }?.asString.orEmpty().take(4000), url, code, settings.server)
             }
             val newer = release.versionCode > currentVersionCode
             record(settings, !manual, true, if (newer) "发现新版本 ${release.version}（${release.versionCode}）" else "当前已是最新版本", release.takeIf { newer })
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
+            val serverName = if (settings.server == UpdateServer.API) "后端 API" else "GitHub"
             val reason = when (e) {
-                is java.net.UnknownHostException -> "无法解析 GitHub 地址，请检查网络"
-                is java.net.SocketTimeoutException -> "连接 GitHub 超时"
+                is java.net.UnknownHostException -> "无法解析${serverName}地址，请检查网络"
+                is java.net.SocketTimeoutException -> "连接${serverName}超时"
                 else -> e.message?.take(200) ?: "无法读取更新清单"
             }
             record(settings, !manual, false, reason, null)
@@ -132,20 +169,21 @@ class AppUpdateRepository(
             withContext(NonCancellable) { stateMutex.withLock { mutable.value = mutable.value.copy(checking = false) } }
         }
     }
-    private fun downloadManifest(channel: UpdateChannel): String {
-        val primary = endpoint(channel).toHttpUrl()
-        // Older Releases still use update.json. Only a missing new filename may fall back,
+    private fun downloadManifest(channel: UpdateChannel, server: UpdateServer): String {
+        val serverName = if (server == UpdateServer.API) "后端 API" else "GitHub"
+        val primary = endpoint(channel, server).toHttpUrl()
+        // Older GitHub Releases still use update.json. Only a missing new filename may fall back,
         // and both requests stay under the selected channel's original download path.
-        val legacy = requireNotNull(primary.resolve("update.json"))
-        for (url in listOf(primary, legacy)) {
+        val urls = if (server == UpdateServer.GITHUB) listOf(primary, requireNotNull(primary.resolve("update.json"))) else listOf(primary)
+        for (url in urls) {
             val request = Request.Builder().url(url)
                 .header("Accept", "application/json").header("User-Agent", "XATune-Android").build()
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) return response.body?.string() ?: throw IOException("清单响应为空")
-                if (response.code != 404) throw IOException("GitHub HTTP ${response.code}")
+                if (response.code != 404) throw IOException("$serverName HTTP ${response.code}")
             }
         }
-        throw IOException("GitHub ${channel.label}更新清单尚未发布（HTTP 404）")
+        throw IOException("$serverName ${channel.label}更新清单尚未发布（HTTP 404）")
     }
 
     private suspend fun record(settings: UpdateSettings, automatic: Boolean, success: Boolean, detail: String, release: AppRelease?) = stateMutex.withLock {

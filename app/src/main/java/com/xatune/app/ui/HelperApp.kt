@@ -72,21 +72,38 @@ import java.time.format.DateTimeFormatter
 @Composable internal fun UpdateNotification(update: UpdateUi, onDismiss: () -> Unit) {
     val release = update.offer ?: return
     val notes = remember(release.notes) { updateNotesForDisplay(release.notes) }
-    var confirm by remember(release.version) { mutableStateOf(false) }
-    var linkError by remember(release.version) { mutableStateOf(false) }
+    var linkError by remember(release.version, release.versionCode, release.url) { mutableStateOf(false) }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    if (!confirm) InAppNoticeBanner("发现新版本 ${release.version}", action = "查看更新", onAction = { confirm = true }, onDismiss = onDismiss)
-    if (confirm) AlertDialog(onDismissRequest = onDismiss,
-        title = { Text("更新至 ${release.version}") },
-        text = { Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("确认后将在浏览器中打开 GitHub Release 页面，由你下载并安装新版本。")
-            if (notes.isNotBlank()) Text(notes)
-            if (linkError) Text("没有可打开 GitHub 的浏览器，请安装浏览器后重试。", color = MaterialTheme.colorScheme.error)
-        } },
-        confirmButton = { TextButton(onClick = {
-            runCatching { uriHandler.openUri(release.url) }.onSuccess { onDismiss() }.onFailure { linkError = true }
-        }) { Text("前往 GitHub 下载") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } })
+    val isApi = release.server == com.xatune.app.data.UpdateServer.API
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("发现新版本 ${release.version}") },
+        text = {
+            Column(
+                Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    if (isApi) "确认后将在浏览器中下载适配当前设备的安装包，由你完成安装。"
+                    else "确认后将在浏览器中打开 GitHub Release 页面，由你下载并安装新版本。"
+                )
+                if (notes.isNotBlank()) Text(notes)
+                if (linkError) {
+                    Text(
+                        if (isApi) "没有可打开下载链接的浏览器，请安装浏览器后重试。"
+                        else "没有可打开 GitHub 的浏览器，请安装浏览器后重试。",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                runCatching { uriHandler.openUri(release.url) }.onSuccess { onDismiss() }.onFailure { linkError = true }
+            }) { Text(if (isApi) "立即下载" else "前往 GitHub 下载") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } }
+    )
 }
 
 @Composable internal fun LoginScreen(state: UiState, onLogin: (String, String) -> Unit, onWeb: (String) -> Unit, onDemo: (() -> Unit)?, onBack: (() -> Unit)?, announcements: AnnouncementViewModel? = null) {

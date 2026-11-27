@@ -20,9 +20,18 @@ class AppUpdatesTest {
     @Test fun manifestAddressesAndBuildDefaultsMatchChannels() {
         assertEquals("$RELEASES_URL/latest/download/release.update.json", updateManifestUrl(UpdateChannel.RELEASE))
         assertEquals("$RELEASES_URL/download/Prerelease/prerelease.update.json", updateManifestUrl(UpdateChannel.PRERELEASE))
+        assertEquals(API_RELEASE_MANIFEST_URL, updateManifestUrl(UpdateChannel.RELEASE, UpdateServer.API))
+        assertEquals("$RELEASES_URL/latest/download/release.update.json", updateManifestUrl(UpdateChannel.RELEASE, UpdateServer.GITHUB))
+        assertEquals("arm64", apiReleaseArch(listOf("arm64-v8a", "armeabi-v7a")))
+        assertEquals("arm", apiReleaseArch(listOf("armeabi-v7a")))
+        assertEquals("x64", apiReleaseArch(listOf("x86_64", "x86")))
+        assertEquals("x86", apiReleaseArch(listOf("x86")))
+        assertEquals("arm64", apiReleaseArch(emptyList()))
+        assertEquals("$API_RELEASE_DOWNLOAD_BASE_URL/arm", apiReleaseDownloadUrl(listOf("armeabi-v7a")))
         assertEquals(UpdateChannel.RELEASE, UpdateChannel.fromPushChannel("release"))
         assertEquals(UpdateChannel.PRERELEASE, UpdateChannel.fromPushChannel("prerelease"))
         assertEquals(UpdateChannel.fromPushChannel(BuildConfig.PUSH_CHANNEL), UpdateSettings().channel)
+        assertEquals(UpdateServer.GITHUB, UpdateSettings().server)
         assertFalse(UpdateSettings().automatic)
     }
 
@@ -30,7 +39,7 @@ class AppUpdatesTest {
         MockWebServer().use { server ->
             server.start()
             val storage = MemoryStorage()
-            val repo = AppUpdateRepository(storage, endpoint = { server.url("/").toString() }, currentVersionCode = 34)
+            val repo = AppUpdateRepository(storage, endpoint = { _, _ -> server.url("/").toString() }, currentVersionCode = 34)
             repo.check()
             assertEquals(0, server.requestCount)
             assertTrue(repo.state.value.logs.isEmpty())
@@ -40,6 +49,7 @@ class AppUpdatesTest {
             assertTrue(storage.saved.logs.all { it.success && !it.automatic })
             assertEquals(35, repo.state.value.offer?.versionCode)
             assertEquals("$RELEASES_URL/tag/v1.2.0", repo.state.value.offer?.url)
+            assertEquals(UpdateServer.GITHUB, repo.state.value.offer?.server)
             val request = server.takeRequest()
             assertNull(request.getHeader("Authorization"))
             assertNull(request.getHeader("Cookie"))
@@ -52,7 +62,7 @@ class AppUpdatesTest {
             server.start()
             val storage = MemoryStorage()
             var now = 1_000L
-            val repo = AppUpdateRepository(storage, endpoint = { server.url("/").toString() }, currentVersionCode = 34, clock = { now++ })
+            val repo = AppUpdateRepository(storage, endpoint = { _, _ -> server.url("/").toString() }, currentVersionCode = 34, clock = { now++ })
             repo.configure { it.copy(automatic = true) }
             server.enqueue(MockResponse().setResponseCode(429).addHeader("Retry-After", "86400"))
             repo.check()
@@ -85,7 +95,7 @@ class AppUpdatesTest {
     @Test fun selectedPrereleaseIsFetchedAndComparedUsingVersionCode() = runBlocking {
         MockWebServer().use { server ->
             server.start()
-            val repo = AppUpdateRepository(MemoryStorage(), endpoint = { server.url("/${it.value}.update.json").toString() }, currentVersionCode = 34)
+            val repo = AppUpdateRepository(MemoryStorage(), endpoint = { channel, _ -> server.url("/${channel.value}.update.json").toString() }, currentVersionCode = 34)
             repo.configure { it.copy(channel = UpdateChannel.PRERELEASE) }
             server.enqueue(manifest(channel = "prerelease"))
             repo.check(manual = true)
@@ -97,10 +107,58 @@ class AppUpdatesTest {
         }
     }
 
+    @Test fun apiServerChecksStableReleaseAndOffersDirectArchDownloadUrl() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val storage = MemoryStorage(
+                AppUpdateState(settings = UpdateSettings(channel = UpdateChannel.RELEASE, server = UpdateServer.API, automatic = true))
+            )
+            val repo = AppUpdateRepository(
+                storage,
+                endpoint = { _, srv ->
+                    assertEquals(UpdateServer.API, srv)
+                    server.url("/download/release/release.update.json").toString()
+                },
+                currentVersionCode = 34,
+                apiDownloadUrl = { apiReleaseDownloadUrl(listOf("x86_64", "x86")) }
+            )
+            server.enqueue(manifest(code = 36, channel = "stable"))
+            repo.check(manual = false)
+            assertEquals("/download/release/release.update.json", server.takeRequest().path)
+            val offer = requireNotNull(repo.state.value.offer)
+            assertEquals(36, offer.versionCode)
+            assertEquals(UpdateServer.API, offer.server)
+            assertEquals("$API_RELEASE_DOWNLOAD_BASE_URL/x64", offer.url)
+            assertTrue(repo.state.value.logs.first().automatic)
+            assertTrue(repo.state.value.logs.first().success)
+        }
+    }
+
+    @Test fun apiServerRejectsPrereleaseAndDoesNotFallbackToLegacyManifestOn404() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val storage = MemoryStorage(
+                AppUpdateState(settings = UpdateSettings(channel = UpdateChannel.PRERELEASE, server = UpdateServer.API))
+            )
+            val repo = AppUpdateRepository(storage, endpoint = { _, _ -> server.url("/download/release/release.update.json").toString() })
+            repo.check(manual = true)
+            assertEquals(0, server.requestCount)
+            assertFalse(repo.state.value.logs.first().success)
+            assertTrue(repo.state.value.logs.first().detail.contains("后端 API 仅支持稳定版"))
+
+            repo.configure { it.copy(channel = UpdateChannel.RELEASE, server = UpdateServer.API) }
+            server.enqueue(MockResponse().setResponseCode(404))
+            repo.check(manual = true)
+            assertEquals(1, server.requestCount)
+            assertFalse(repo.state.value.logs.first().success)
+            assertTrue(repo.state.value.logs.first().detail.contains("后端 API"))
+        }
+    }
+
     @Test fun invalidManifestIsLoggedAsFailureAndDoesNotOfferUpdate() = runBlocking {
         MockWebServer().use { server ->
             server.start()
-            val repo = AppUpdateRepository(MemoryStorage(), endpoint = { server.url("/").toString() })
+            val repo = AppUpdateRepository(MemoryStorage(), endpoint = { _, _ -> server.url("/").toString() })
             for (response in listOf(manifest(channel = "prerelease"), MockResponse().setBody("not json"), manifest(code = 0))) {
                 server.enqueue(response)
                 repo.check(manual = true)
@@ -115,7 +173,7 @@ class AppUpdatesTest {
     @Test fun otherServerOnlyPersistsInputAndNeverUsesItForRequests() = runBlocking {
         var requests = 0
         val storage = MemoryStorage()
-        val repo = AppUpdateRepository(storage, endpoint = { requests++; error("Must not fetch") })
+        val repo = AppUpdateRepository(storage, endpoint = { _, _ -> requests++; error("Must not fetch") })
         repo.configure { it.copy(server = UpdateServer.OTHER, repositoryUrl = "https://mirror.example/repo") }
         repo.check(manual = true)
         assertEquals(0, requests)

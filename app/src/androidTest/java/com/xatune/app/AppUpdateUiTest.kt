@@ -5,14 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.compose.runtime.*
 import androidx.compose.material3.*
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.toPixelMap
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.core.graphics.ColorUtils
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xatune.app.model.*
-import java.io.File
-import android.graphics.Bitmap
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.test.*
@@ -29,10 +23,10 @@ import org.junit.runner.RunWith
 class AppUpdateUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun notificationRequiresConfirmationBeforeOpeningOfficialRelease() {
+    @Test fun notificationShowsDialogDirectlyBeforeOpeningOfficialRelease() {
         var opened: String? = null
         compose.setContent {
-            var offer by remember { mutableStateOf(AppRelease("v1.2.0", "改进与修复\n\n附件：\n不应显示的附件说明", "https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0") as AppRelease?) }
+            var offer by remember { mutableStateOf(AppRelease("v1.2.0", "改进与修复\n\n附件：\n不应显示的附件说明", "https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0", 73, UpdateServer.GITHUB) as AppRelease?) }
             CompositionLocalProvider(LocalUriHandler provides object : UriHandler {
                 override fun openUri(uri: String) { opened = uri }
             }) {
@@ -40,41 +34,30 @@ class AppUpdateUiTest {
             }
         }
         compose.onNodeWithText("发现新版本 v1.2.0").assertIsDisplayed()
-        compose.onNodeWithText("查看更新").performClick()
         compose.onNodeWithText("改进与修复").assertIsDisplayed()
         compose.onNodeWithText("附件：", substring = true).assertDoesNotExist()
         compose.onNodeWithText("不应显示的附件说明", substring = true).assertDoesNotExist()
         compose.runOnIdle { assertNull(opened) }
         compose.onNodeWithText("前往 GitHub 下载").performClick()
         compose.runOnIdle { assertEquals("https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0", opened) }
-        compose.onNodeWithText("更新至 v1.2.0").assertDoesNotExist()
+        compose.onNodeWithText("发现新版本 v1.2.0").assertDoesNotExist()
     }
 
-    @Test fun bannerColorsRemainReadableInLightAndDarkThemes() {
-        var dark by mutableStateOf(false)
+    @Test fun apiUpdateDialogOpensDirectArchDownloadLink() {
+        var opened: String? = null
         compose.setContent {
-            MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
-                UpdateNotification(UpdateUi(offer = AppRelease("v1.2.0", "更新说明", "https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0")), {})
+            var offer by remember { mutableStateOf(AppRelease("1.2.0", "后端直链更新说明", "$API_RELEASE_DOWNLOAD_BASE_URL/arm64", 74, UpdateServer.API) as AppRelease?) }
+            CompositionLocalProvider(LocalUriHandler provides object : UriHandler {
+                override fun openUri(uri: String) { opened = uri }
+            }) {
+                HelperTheme { UpdateNotification(UpdateUi(offer = offer), { offer = null }) }
             }
         }
-        for (night in listOf(false, true)) {
-            compose.runOnIdle { dark = night }
-            val colors = if (night) darkColorScheme() else lightColorScheme()
-            val captured = compose.onNodeWithTag("inAppNotice").captureToImage()
-            val pixels = captured.toPixelMap()
-            var matchingBackground = 0
-            for (x in 0 until pixels.width step 4) for (y in 0 until pixels.height step 4) {
-                if (pixels[x, y].toArgb() == colors.surfaceContainerHigh.toArgb()) matchingBackground++
-            }
-            assertTrue("Banner uses the current theme surface", matchingBackground > 30)
-            assertTrue(ColorUtils.calculateContrast(colors.onSurface.toArgb(), colors.surfaceContainerHigh.toArgb()) >= 4.5)
-            assertTrue(ColorUtils.calculateContrast(colors.primary.toArgb(), colors.surfaceContainerHigh.toArgb()) >= 4.5)
-            val directory = InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)
-            File(directory, "update-notification-${if (night) "dark" else "light"}.png").outputStream().use {
-                captured.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)
-            }
-            compose.onNodeWithText("查看更新").assertIsDisplayed().assertHasClickAction()
-        }
+        compose.onNodeWithText("发现新版本 1.2.0").assertIsDisplayed()
+        compose.onNodeWithText("后端直链更新说明").assertIsDisplayed()
+        compose.onNodeWithText("立即下载").performClick()
+        compose.runOnIdle { assertEquals("$API_RELEASE_DOWNLOAD_BASE_URL/arm64", opened) }
+        compose.onNodeWithText("发现新版本 1.2.0").assertDoesNotExist()
     }
 
     @Test fun academicBannerShowsDetailsAndCanBeOpenedOrDismissed() {
@@ -135,8 +118,11 @@ class AppUpdateUiTest {
                 { settings = settings.copy(automatic = it) }, {})
         } }
         compose.onNodeWithTag("updateChannel-prerelease").assertIsSelected()
+        compose.onNodeWithTag("updateServer-api").assertIsNotEnabled()
         compose.onNodeWithTag("updateChannel-release").performClick().assertIsSelected()
-        compose.onNodeWithText("其他", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("updateServer-api").assertIsEnabled().performClick().assertIsSelected()
+        compose.runOnIdle { assertEquals(UpdateServer.API, settings.server) }
+        compose.onNodeWithTag("updateServer-other").performClick()
         compose.onNodeWithTag("updateRepositoryUrl").performTextInput("https://mirror.example/repo")
         compose.runOnIdle { assertEquals("https://mirror.example/repo", settings.repositoryUrl) }
         compose.onNodeWithTag("automaticUpdates").performClick()
