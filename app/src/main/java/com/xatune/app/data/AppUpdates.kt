@@ -44,7 +44,8 @@ data class AppRelease(
     val notes: String,
     val url: String,
     val versionCode: Int = 0,
-    val server: UpdateServer = UpdateServer.GITHUB
+    val server: UpdateServer = UpdateServer.GITHUB,
+    val apiUrl: String? = null
 )
 data class AppUpdateState(
     val settings: UpdateSettings = UpdateSettings(), val logs: List<UpdateLog> = emptyList(),
@@ -148,11 +149,16 @@ class AppUpdateRepository(
                 if (json.get("channel")?.asString != expected) throw IOException("更新清单渠道不匹配")
                 val code = json.get("versionCode")?.asInt?.takeIf { it > 0 } ?: throw IOException("清单缺少有效版本代码")
                 val version = json.get("versionName")?.asString?.takeIf { it.isNotBlank() } ?: throw IOException("清单缺少版本名称")
-                val url = when (settings.server) {
-                    UpdateServer.API -> apiDownloadUrl()
-                    else -> if (settings.channel == UpdateChannel.PRERELEASE) "$RELEASES_URL/tag/Prerelease" else "$RELEASES_URL/tag/v$version"
-                }
-                AppRelease(version, json.get("notes")?.takeUnless { it.isJsonNull }?.asString.orEmpty().take(4000), url, code, settings.server)
+                val githubUrl = if (settings.channel == UpdateChannel.PRERELEASE) "$RELEASES_URL/tag/Prerelease" else "$RELEASES_URL/tag/v$version"
+                val apiUrl = if (settings.channel == UpdateChannel.RELEASE) apiDownloadUrl() else null
+                AppRelease(
+                    version = version,
+                    notes = json.get("notes")?.takeUnless { it.isJsonNull }?.asString.orEmpty().take(4000),
+                    url = githubUrl,
+                    versionCode = code,
+                    server = settings.server,
+                    apiUrl = apiUrl
+                )
             }
             val newer = release.versionCode > currentVersionCode
             record(settings, !manual, true, if (newer) "发现新版本 ${release.version}（${release.versionCode}）" else "当前已是最新版本", release.takeIf { newer })

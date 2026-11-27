@@ -72,9 +72,12 @@ import java.time.format.DateTimeFormatter
 @Composable internal fun UpdateNotification(update: UpdateUi, onDismiss: () -> Unit) {
     val release = update.offer ?: return
     val notes = remember(release.notes) { updateNotesForDisplay(release.notes) }
-    var linkError by remember(release.version, release.versionCode, release.url) { mutableStateOf(false) }
+    var linkError by remember(release.version, release.versionCode, release.url, release.apiUrl) { mutableStateOf(false) }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    val isApi = release.server == com.xatune.app.data.UpdateServer.API
+    val apiUrl = release.apiUrl
+    fun openLink(target: String) {
+        runCatching { uriHandler.openUri(target) }.onSuccess { onDismiss() }.onFailure { linkError = true }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("发现新版本 ${release.version}") },
@@ -84,23 +87,34 @@ import java.time.format.DateTimeFormatter
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    if (isApi) "确认后将在浏览器中下载适配当前设备的安装包，由你完成安装。"
+                    if (apiUrl != null) "确认后将在浏览器中打开对应下载链接，由你完成安装。"
                     else "确认后将在浏览器中打开 GitHub Release 页面，由你下载并安装新版本。"
                 )
                 if (notes.isNotBlank()) Text(notes)
                 if (linkError) {
                     Text(
-                        if (isApi) "没有可打开下载链接的浏览器，请安装浏览器后重试。"
-                        else "没有可打开 GitHub 的浏览器，请安装浏览器后重试。",
+                        "没有可打开下载链接的浏览器，请安装浏览器后重试。",
                         color = MaterialTheme.colorScheme.error
                     )
+                }
+                if (apiUrl != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { openLink(apiUrl) },
+                            modifier = Modifier.fillMaxWidth().testTag("updateDownloadApi")
+                        ) { Text("后端 API 下载") }
+                        OutlinedButton(
+                            onClick = { openLink(release.url) },
+                            modifier = Modifier.fillMaxWidth().testTag("updateDownloadGithub")
+                        ) { Text("前往 GitHub 下载") }
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                runCatching { uriHandler.openUri(release.url) }.onSuccess { onDismiss() }.onFailure { linkError = true }
-            }) { Text(if (isApi) "立即下载" else "前往 GitHub 下载") }
+            if (apiUrl == null) {
+                TextButton(onClick = { openLink(release.url) }) { Text("前往 GitHub 下载") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } }
     )

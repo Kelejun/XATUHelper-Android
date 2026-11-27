@@ -23,30 +23,54 @@ import org.junit.runner.RunWith
 class AppUpdateUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun notificationShowsDialogDirectlyBeforeOpeningOfficialRelease() {
+    @Test fun notificationShowsBothGithubAndApiDownloadOptionsForStableRelease() {
         var opened: String? = null
         compose.setContent {
-            var offer by remember { mutableStateOf(AppRelease("v1.2.0", "改进与修复\n\n附件：\n不应显示的附件说明", "https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0", 73, UpdateServer.GITHUB) as AppRelease?) }
+            var offer by remember {
+                mutableStateOf(
+                    AppRelease(
+                        version = "1.2.0",
+                        notes = "改进与修复\n\n附件：\n不应显示的附件说明",
+                        url = "https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0",
+                        versionCode = 74,
+                        server = UpdateServer.GITHUB,
+                        apiUrl = "$API_RELEASE_DOWNLOAD_BASE_URL/arm64"
+                    ) as AppRelease?
+                )
+            }
             CompositionLocalProvider(LocalUriHandler provides object : UriHandler {
                 override fun openUri(uri: String) { opened = uri }
             }) {
                 HelperTheme { UpdateNotification(UpdateUi(offer = offer), { offer = null }) }
             }
         }
-        compose.onNodeWithText("发现新版本 v1.2.0").assertIsDisplayed()
+        compose.onNodeWithText("发现新版本 1.2.0").assertIsDisplayed()
         compose.onNodeWithText("改进与修复").assertIsDisplayed()
         compose.onNodeWithText("附件：", substring = true).assertDoesNotExist()
         compose.onNodeWithText("不应显示的附件说明", substring = true).assertDoesNotExist()
+        compose.onNodeWithTag("updateDownloadApi").assertIsDisplayed()
+        compose.onNodeWithTag("updateDownloadGithub").assertIsDisplayed()
         compose.runOnIdle { assertNull(opened) }
-        compose.onNodeWithText("前往 GitHub 下载").performClick()
+        compose.onNodeWithTag("updateDownloadGithub").performClick()
         compose.runOnIdle { assertEquals("https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0", opened) }
-        compose.onNodeWithText("发现新版本 v1.2.0").assertDoesNotExist()
+        compose.onNodeWithText("发现新版本 1.2.0").assertDoesNotExist()
     }
 
-    @Test fun apiUpdateDialogOpensDirectArchDownloadLink() {
+    @Test fun apiDownloadButtonOpensDirectArchDownloadLink() {
         var opened: String? = null
         compose.setContent {
-            var offer by remember { mutableStateOf(AppRelease("1.2.0", "后端直链更新说明", "$API_RELEASE_DOWNLOAD_BASE_URL/arm64", 74, UpdateServer.API) as AppRelease?) }
+            var offer by remember {
+                mutableStateOf(
+                    AppRelease(
+                        version = "1.2.0",
+                        notes = "后端直链更新说明",
+                        url = "https://github.com/Kelejun/XATUHelper-Android/releases/tag/v1.2.0",
+                        versionCode = 74,
+                        server = UpdateServer.API,
+                        apiUrl = "$API_RELEASE_DOWNLOAD_BASE_URL/arm64"
+                    ) as AppRelease?
+                )
+            }
             CompositionLocalProvider(LocalUriHandler provides object : UriHandler {
                 override fun openUri(uri: String) { opened = uri }
             }) {
@@ -55,7 +79,8 @@ class AppUpdateUiTest {
         }
         compose.onNodeWithText("发现新版本 1.2.0").assertIsDisplayed()
         compose.onNodeWithText("后端直链更新说明").assertIsDisplayed()
-        compose.onNodeWithText("立即下载").performClick()
+        compose.onNodeWithTag("updateDownloadGithub").assertIsDisplayed()
+        compose.onNodeWithTag("updateDownloadApi").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals("$API_RELEASE_DOWNLOAD_BASE_URL/arm64", opened) }
         compose.onNodeWithText("发现新版本 1.2.0").assertDoesNotExist()
     }
