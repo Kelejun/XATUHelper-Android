@@ -92,7 +92,9 @@ class WidgetFormattingTest {
             CampusOption("9328", "9328空调")
         )
         val normal = formatElectricityWidget(Electricity(dorm, "335.25", sameDayMillis), dorm, now)
+        assertEquals("宿舍电量", normal.headerTitle)
         assertEquals("335.25", normal.balanceText)
+        assertEquals("度", normal.unit)
         assertEquals("剩余可用电量", normal.caption)
         assertFalse(normal.isLow)
         assertEquals("9号楼 9328空调", normal.roomName)
@@ -101,6 +103,7 @@ class WidgetFormattingTest {
         val prevDayMillis = ZonedDateTime.of(2026, 11, 24, 21, 15, 0, 0, SchoolZone).toInstant().toEpochMilli()
         val low = formatElectricityWidget(Electricity(dorm, "6.5", prevDayMillis), dorm, now)
         assertEquals("6.50", low.balanceText)
+        assertEquals("度", low.unit)
         assertEquals("电量偏低，记得充值", low.caption)
         assertTrue(low.isLow)
         assertEquals("11/24 21:15 更新", low.updatedText)
@@ -108,6 +111,26 @@ class WidgetFormattingTest {
         val unqueried = formatElectricityWidget(null, dorm, now)
         assertEquals("待查询", unqueried.balanceText)
         assertFalse(unqueried.hasBalance)
+
+        // Building 16 (E051) displays amount balance in 元.
+        val dorm16 = Dorm(
+            CampusOption("p51", "16公寓电费充值", "E051"),
+            CampusOption("1", "未央"),
+            CampusOption("B1", "16号楼"),
+            CampusOption("H101", "16-101")
+        )
+        val amountNormal = formatElectricityWidget(Electricity(dorm16, "48.6", sameDayMillis), dorm16, now)
+        assertEquals("宿舍电费", amountNormal.headerTitle)
+        assertEquals("48.60", amountNormal.balanceText)
+        assertEquals("元", amountNormal.unit)
+        assertEquals("剩余可用金额", amountNormal.caption)
+        assertFalse(amountNormal.isLow)
+
+        val amountLow = formatElectricityWidget(Electricity(dorm16, "8.2", sameDayMillis), dorm16, now)
+        assertEquals("8.20", amountLow.balanceText)
+        assertEquals("元", amountLow.unit)
+        assertEquals("余额偏低，记得充值", amountLow.caption)
+        assertTrue(amountLow.isLow)
     }
 
     @Test fun examWidgetCardFormatsPrimaryCountdownVenueAndFollowing() {

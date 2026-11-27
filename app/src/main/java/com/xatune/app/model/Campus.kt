@@ -5,16 +5,27 @@ import java.math.RoundingMode
 import java.time.*
 import java.time.temporal.ChronoUnit
 
-data class CampusOption(val id: String, val name: String)
+fun usesNestedJsonData(factoryCode: String?): Boolean = factoryCode?.trim().equals("E051", ignoreCase = true)
+
+data class CampusOption(val id: String, val name: String, val factoryCode: String? = null) {
+    val usesNestedJsonData: Boolean get() = usesNestedJsonData(factoryCode)
+}
 data class Dorm(val project: CampusOption, val area: CampusOption, val building: CampusOption, val room: CampusOption) {
     val key: String get() = listOf(project.id, area.id, building.id, room.id).joinToString("|")
     val label: String get() = "${area.name.trim()} · ${building.name.trim()} ${room.name.trim()}"
+    val factoryCode: String? get() = project.factoryCode
+    val usesNestedJsonData: Boolean get() = usesNestedJsonData(factoryCode)
+    val isAmountBalance: Boolean get() = usesNestedJsonData
+    val balanceUnit: String get() = if (isAmountBalance) "元" else "度"
+    val balanceLabel: String get() = if (isAmountBalance) "剩余金额" else "剩余电量"
+    val lowBalanceNotice: String get() = if (isAmountBalance) "余额偏低，请及时充值" else "电量偏低，请及时充值"
 }
 data class Electricity(val dorm: Dorm, val balance: String, val checkedAt: Long)
 data class DailyBalance(val day: String, val balance: String)
 fun balanceAmount(oddl: String?, suml: String?): String {
-    val used = oddl?.toBigDecimalOrNull() ?: throw IllegalArgumentException("电费余额字段缺失")
-    val amount = if (suml == null) used else (suml.toBigDecimalOrNull() ?: throw IllegalArgumentException("电费余额字段异常")) - used
+    val used = oddl?.trim()?.toBigDecimalOrNull() ?: throw IllegalArgumentException("电费余额字段缺失")
+    val normalizedSum = suml?.trim()?.takeIf { it.isNotEmpty() }
+    val amount = if (normalizedSum == null) used else (normalizedSum.toBigDecimalOrNull() ?: throw IllegalArgumentException("电费余额字段异常")) - used
     return amount.setScale(2, RoundingMode.HALF_UP).toPlainString()
 }
 fun dailyDeduction(previous: DailyBalance?, current: DailyBalance): BigDecimal? {

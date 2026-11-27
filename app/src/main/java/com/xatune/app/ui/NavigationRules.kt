@@ -4,8 +4,9 @@ import com.xatune.app.model.*
 import java.time.LocalDate
 
 fun parentPage(page: String?): String? = when (page) {
-    "notifications", "widgets", "checkinLocation", "announcementHistory" -> "settings"
-    "charge" -> "electricity"
+    "notifications", "widgets", "checkinLocation", "announcementHistory",
+    "timetableSettings", "informationUpdates", "appUpdates" -> "settings"
+    "charge", "electricityHistory" -> "electricity"
     "planWeb" -> "plan"
     else -> null
 }

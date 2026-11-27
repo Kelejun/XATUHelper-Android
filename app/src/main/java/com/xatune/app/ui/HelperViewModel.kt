@@ -161,6 +161,7 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
                     showDiagnostics = repository.store.extra("showDiagnostics", Boolean::class.javaObjectType) ?: false)
                 warmCurrentTable()
                 warmExams()
+                warmPlan()
                 campus?.load()
                 runCatching { syncSystems() }
                 // Cache first. Avoid login requests on every screen or process restart.
@@ -226,6 +227,7 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
         mutable.update { it.copy(currentTable = if (it.account == table.account && it.currentSemester == currentSemester) it.currentTable else null, allGrades = if (it.account == table.account) it.allGrades else false, academic = if (it.account == table.account) it.academic else emptyMap(), account = table.account, currentSemester = currentSemester, webAccount = table.account, table = table, baseTable = base, edits = edits, pendingEdits = edited.pending, semesters = semesters, selectedSemester = table.semester.id, kind = table.kind, needsLogin = false, demo = BuildConfig.DEMO_ENABLED && table.account == "__demo__", week = weekOf(LocalDate.parse(table.monday), schoolToday())) }
         warmCurrentTable()
         warmExams()
+        warmPlan()
         campus?.load()
         runCatching { syncSystems() }
         startAutomaticUpdates()
@@ -300,6 +302,15 @@ class HelperViewModel(private val repository: TimetableRepository, private val c
         repository.store.academic(s.account, AcademicKind.EXAMS, s.currentSemester)?.let { snapshot ->
             currentCoroutineContext().ensureActive()
             mutable.update { if (it.account == s.account && it.currentSemester == s.currentSemester) it.copy(academic = it.academic + (academicKey(AcademicKind.EXAMS, s.currentSemester) to AcademicUi(snapshot))) else it }
+        }
+    }
+    private suspend fun warmPlan() {
+        val s = state.value
+        if (s.account.isBlank()) return
+        val snapshot = if (s.demo) demoAcademic(AcademicKind.PLAN) else repository.store.academic(s.account, AcademicKind.PLAN, "all")
+        snapshot?.let { data ->
+            currentCoroutineContext().ensureActive()
+            mutable.update { if (it.account == s.account) it.copy(academic = it.academic + (academicKey(AcademicKind.PLAN, "all") to AcademicUi(data))) else it }
         }
     }
     fun loadAcademic(kind: AcademicKind, scope: String, force: Boolean = false, forceCatalog: Boolean = force) {

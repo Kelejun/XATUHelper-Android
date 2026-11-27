@@ -68,8 +68,8 @@ class CampusRepository(private val context: Context, val store: LocalStore, priv
     }
     suspend fun projects(account: String) = session.withSession(account) { pay.projects() }
     suspend fun areas(account: String, project: String) = session.withSession(account) { pay.areas(project) }
-    suspend fun buildings(account: String, project: String, area: String) = session.withSession(account) { pay.buildings(project, area) }
-    suspend fun rooms(account: String, project: String, area: String, building: String) = session.withSession(account) { pay.rooms(project, area, building) }
+    suspend fun buildings(account: String, project: String, area: String, factoryCode: String? = null) = session.withSession(account) { pay.buildings(project, area, factoryCode) }
+    suspend fun rooms(account: String, project: String, area: String, building: String, factoryCode: String? = null) = session.withSession(account) { pay.rooms(project, area, building, factoryCode) }
     suspend fun saveDorm(account: String, dorm: Dorm) { if (store.account() != account) throw SessionExpired(); store.extra("dorm:$account", dorm); store.extra("electric:$account", null) }
     suspend fun clearDorm(account: String) { store.extra("dorm:$account", null); store.extra("electric:$account", null) }
     suspend fun refreshElectricity(account: String): Electricity {

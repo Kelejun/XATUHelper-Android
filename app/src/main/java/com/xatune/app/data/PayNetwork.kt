@@ -15,6 +15,14 @@ class PayNetwork(private val cookies: CookieJar, private val base: String = "htt
     private val tokenName = "datalook_reimbursement_token"
     companion object {
         fun tokenFromUrl(url: String): String? = Regex("""[?#&]token=([^&#]+)""").find(url)?.groupValues?.get(1)?.let { URLDecoder.decode(it, "UTF-8") }
+        fun requestBody(projectId: String, factoryCode: String? = null, params: Map<String, String> = emptyMap()): Map<String, Any> {
+            if (params.isEmpty()) return mapOf("projectId" to projectId)
+            if (usesNestedJsonData(factoryCode)) return mapOf("projectId" to projectId, "jsonData" to params)
+            return buildMap {
+                put("projectId", projectId)
+                putAll(params)
+            }
+        }
         fun list(data: JsonElement): List<JsonObject> {
             if (data.isJsonArray) return data.asJsonArray.filter(JsonElement::isJsonObject).map(JsonElement::getAsJsonObject)
             if (data.isJsonObject) {
@@ -52,7 +60,7 @@ class PayNetwork(private val cookies: CookieJar, private val base: String = "htt
         }
         throw SessionExpired()
     }
-    private fun api(path: String, body: Map<String, String>? = null): JsonElement {
+    private fun api(path: String, body: Map<String, Any>? = null): JsonElement {
         if (token() == null) authenticate()
         repeat(2) { attempt ->
             val url = (base + "api/" + path).toHttpUrl()
@@ -79,13 +87,13 @@ class PayNetwork(private val cookies: CookieJar, private val base: String = "htt
         throw SessionExpired()
     }
     private fun JsonObject.text(key: String) = get(key)?.takeUnless { it.isJsonNull }?.asString.orEmpty()
-    fun projects(): List<CampusOption> = list(api("pay/project/getAllProjectList")).filter { it.text("proModelUrl") in listOf("electric", "electricNewCapec") }.map { CampusOption(it.text("id"), it.text("projectName").trim().ifBlank { "电费" }) }.filter { it.id.isNotBlank() }
-    private fun options(path: String, args: Map<String, String>, id: String, name: String) = list(api("pay/web/payEleCostController/$path", args)).map { CampusOption(it.text(id).trim(), it.text(name).trim()) }.filter { it.id.isNotBlank() && it.name.isNotBlank() }.distinctBy { it.id }
-    fun areas(project: String) = options("querySchoolList", mapOf("projectId" to project), "schoolid", "schoolname")
-    fun buildings(project: String, area: String) = options("queryBuildingList", mapOf("projectId" to project, "areaid" to area), "buildid", "buildname")
-    fun rooms(project: String, area: String, building: String) = options("queryRoomList", mapOf("projectId" to project, "areaid" to area, "buildid" to building), "roomid", "roomname")
+    fun projects(): List<CampusOption> = list(api("pay/project/getAllProjectList")).filter { it.text("proModelUrl") in listOf("electric", "electricNewCapec") }.map { CampusOption(it.text("id"), it.text("projectName").trim().ifBlank { "电费" }, it.text("factoryCode").trim().takeIf { code -> code.isNotEmpty() }) }.filter { it.id.isNotBlank() }
+    private fun options(path: String, args: Map<String, Any>, id: String, name: String) = list(api("pay/web/payEleCostController/$path", args)).map { CampusOption(it.text(id).trim(), it.text(name).trim()) }.filter { it.id.isNotBlank() && it.name.isNotBlank() }.distinctBy { it.id }
+    fun areas(project: String) = options("querySchoolList", requestBody(project), "schoolid", "schoolname")
+    fun buildings(project: String, area: String, factoryCode: String? = null) = options("queryBuildingList", requestBody(project, factoryCode, mapOf("areaid" to area)), "buildid", "buildname")
+    fun rooms(project: String, area: String, building: String, factoryCode: String? = null) = options("queryRoomList", requestBody(project, factoryCode, mapOf("areaid" to area, "buildid" to building)), "roomid", "roomname")
     fun balance(dorm: Dorm): String {
-        val row = list(api("pay/web/payEleCostController/querySydl", mapOf("projectId" to dorm.project.id, "areaid" to dorm.area.id, "buildid" to dorm.building.id, "roomid" to dorm.room.id))).firstOrNull() ?: throw ParseFailure("宿舍余额暂未返回")
+        val row = list(api("pay/web/payEleCostController/querySydl", requestBody(dorm.project.id, dorm.factoryCode, mapOf("areaid" to dorm.area.id, "buildid" to dorm.building.id, "roomid" to dorm.room.id)))).firstOrNull() ?: throw ParseFailure("宿舍余额暂未返回")
         return balanceAmount(row.get("oddl")?.takeUnless { it.isJsonNull }?.asString, row.get("suml")?.takeUnless { it.isJsonNull }?.asString)
     }
 }

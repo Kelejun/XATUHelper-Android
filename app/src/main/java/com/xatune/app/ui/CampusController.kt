@@ -68,18 +68,27 @@ class CampusController(private val repository: CampusRepository, private val sco
     fun project(value: CampusOption) = action { account ->
         mutable.update { it.copy(project = value, area = null, building = null, room = null, areas = emptyList(), buildings = emptyList(), rooms = emptyList()) }
         val list = if (account == "__demo__") listOf(CampusOption("a", "示例校区")) else repository.areas(account, value.id)
-        mutable.update { it.copy(areas = list) }
+        if (list.size == 1) {
+            val onlyArea = list.first()
+            mutable.update { it.copy(areas = list, area = onlyArea) }
+            val buildings = if (account == "__demo__") listOf(CampusOption("b", "9号楼")) else repository.buildings(account, value.id, onlyArea.id, value.factoryCode)
+            mutable.update { it.copy(buildings = buildings) }
+        } else {
+            mutable.update { it.copy(areas = list) }
+        }
     }
     fun area(value: CampusOption) = action { account ->
         val project = state.value.project ?: return@action
         mutable.update { it.copy(area = value, building = null, room = null, buildings = emptyList(), rooms = emptyList()) }
-        val list = if (account == "__demo__") listOf(CampusOption("b", "9号楼")) else repository.buildings(account, project.id, value.id)
+        val list = if (account == "__demo__") listOf(CampusOption("b", "9号楼")) else repository.buildings(account, project.id, value.id, project.factoryCode)
         mutable.update { it.copy(buildings = list) }
     }
     fun building(value: CampusOption) = action { account ->
         val s = state.value
+        val project = s.project ?: return@action
+        val area = s.area ?: return@action
         mutable.update { it.copy(building = value, room = null, rooms = emptyList()) }
-        val list = if (account == "__demo__") listOf(CampusOption("r", "328")) else repository.rooms(account, s.project!!.id, s.area!!.id, value.id)
+        val list = if (account == "__demo__") listOf(CampusOption("r", "328")) else repository.rooms(account, project.id, area.id, value.id, project.factoryCode)
         mutable.update { it.copy(rooms = list) }
     }
     fun room(value: CampusOption) { mutable.update { it.copy(room = value) } }

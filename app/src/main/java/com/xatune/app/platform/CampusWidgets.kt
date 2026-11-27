@@ -325,7 +325,17 @@ object CampusWidgets {
     ): RemoteViews = RemoteViews(context.packageName, R.layout.widget_electricity).apply {
         setOnClickPendingIntent(R.id.widget_root, open)
         setOnClickPendingIntent(R.id.widget_action, refresh)
+        setTextViewText(R.id.widget_header, card.headerTitle)
         setTextViewText(R.id.widget_body, card.balanceText)
+        setTextViewTextSize(
+            R.id.widget_body,
+            TypedValue.COMPLEX_UNIT_SP,
+            when {
+                !card.hasBalance -> 26f
+                card.balanceText.length >= 7 -> 24f
+                else -> 30f
+            }
+        )
         setTextColor(
             R.id.widget_body,
             ContextCompat.getColor(
@@ -333,6 +343,12 @@ object CampusWidgets {
                 if (card.isLow) R.color.widget_accent_electricity else R.color.widget_text
             )
         )
+        if (card.hasBalance) {
+            setViewVisibility(R.id.widget_balance_unit, View.VISIBLE)
+            setTextViewText(R.id.widget_balance_unit, card.unit)
+        } else {
+            setViewVisibility(R.id.widget_balance_unit, View.GONE)
+        }
         setTextViewText(R.id.widget_balance_caption, card.caption)
         setTextColor(
             R.id.widget_balance_caption,

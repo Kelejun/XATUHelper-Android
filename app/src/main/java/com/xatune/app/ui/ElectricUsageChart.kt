@@ -21,9 +21,12 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 
 @Composable
-internal fun ElectricUsageChart(points: List<ElectricUsage>, today: LocalDate = schoolToday()) {
+internal fun ElectricUsageChart(points: List<ElectricUsage>, today: LocalDate = schoolToday(), isAmount: Boolean = false) {
     var selected by remember(points) { mutableStateOf<ElectricUsage?>(null) }
-    if (points.isEmpty()) { InfoPanel("最近 30 天暂无用量记录"); return }
+    val unit = if (isAmount) "元" else "度"
+    val metric = if (isAmount) "消费" else "用量"
+    val action = if (isAmount) "消费" else "用电"
+    if (points.isEmpty()) { InfoPanel("最近 30 天暂无${metric}记录"); return }
     val color = MaterialTheme.colorScheme.primary
     val estimateColor = MaterialTheme.colorScheme.tertiary
     Column {
@@ -32,9 +35,9 @@ internal fun ElectricUsageChart(points: List<ElectricUsage>, today: LocalDate = 
     Box(Modifier.fillMaxWidth().height(112.dp)) { selected?.let { point ->
         Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
             Column(Modifier.padding(12.dp).testTag("electricUsageReading")) {
-                Text("${point.day} · ${point.amount?.setScale(2, RoundingMode.HALF_UP)?.let { "$it 度" } ?: "暂无用量估算"}")
-                if (point.estimated) Text("平均用量估算", style = MaterialTheme.typography.labelSmall)
-                else if (point.intervalDays > 1) Text("${point.intervalDays} 天均摊用量", style = MaterialTheme.typography.labelSmall)
+                Text("${point.day} · ${point.amount?.setScale(2, RoundingMode.HALF_UP)?.let { "$it $unit" } ?: "暂无${metric}估算"}")
+                if (point.estimated) Text("平均${metric}估算", style = MaterialTheme.typography.labelSmall)
+                else if (point.intervalDays > 1) Text("${point.intervalDays} 天均摊${metric}", style = MaterialTheme.typography.labelSmall)
                 if (point.recharge) SuggestionChip(onClick = {}, label = { Text("有电费充值") })
             }
         }
@@ -42,7 +45,7 @@ internal fun ElectricUsageChart(points: List<ElectricUsage>, today: LocalDate = 
     }
     CompositionLocalProvider(LocalViewConfiguration provides longPressConfig) {
         Canvas(Modifier.fillMaxWidth().height(160.dp).testTag("electricUsageChart")
-            .semantics { contentDescription = selected?.let { "${it.day} ${it.amount?.setScale(2, RoundingMode.HALF_UP)?.let { value -> "$value 度" } ?: "暂无用量估算"}${if (it.estimated) " 平均用量估算" else if (it.intervalDays > 1) " ${it.intervalDays} 天均摊用量" else ""}${if (it.recharge) " 有电费充值" else ""}" } ?: "最近 30 天每日用电图" }
+            .semantics { contentDescription = selected?.let { "${it.day} ${it.amount?.setScale(2, RoundingMode.HALF_UP)?.let { value -> "$value $unit" } ?: "暂无${metric}估算"}${if (it.estimated) " 平均${metric}估算" else if (it.intervalDays > 1) " ${it.intervalDays} 天均摊${metric}" else ""}${if (it.recharge) " 有电费充值" else ""}" } ?: "最近 30 天每日${action}图" }
             .pointerInput(points, today) {
                 var x = 0f
                 fun select() { val day = today.minusDays(29).plusDays((((x - 8.dp.toPx()) / (size.width - 16.dp.toPx()).coerceAtLeast(1f)).coerceIn(0f, 1f) * 29).roundToLong()); selected = points.minByOrNull { abs(ChronoUnit.DAYS.between(day, it.day)) } }
@@ -57,6 +60,6 @@ internal fun ElectricUsageChart(points: List<ElectricUsage>, today: LocalDate = 
         }
     }
     Text("${today.minusDays(29)} — $today", style = MaterialTheme.typography.labelSmall)
-    averageUsage(points)?.let { Text("非充值日 ${points.count { !it.estimated && it.amount != null }} 天平均用电 $it 度", style = MaterialTheme.typography.bodySmall) }
+    averageUsage(points)?.let { Text("非充值日 ${points.count { !it.estimated && it.amount != null }} 天平均${action} $it $unit", style = MaterialTheme.typography.bodySmall) }
 }
 }

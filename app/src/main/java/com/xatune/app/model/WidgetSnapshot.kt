@@ -187,7 +187,9 @@ fun formatHolidayWidget(calendar: SchoolCalendar?, today: LocalDate): WidgetHoli
 }
 
 data class WidgetElectricityCard(
+    val headerTitle: String,
     val balanceText: String,
+    val unit: String,
     val caption: String,
     val isLow: Boolean,
     val roomName: String?,
@@ -202,6 +204,9 @@ fun formatElectricityWidget(
     error: String? = null
 ): WidgetElectricityCard {
     val targetDorm = electric?.dorm ?: dorm
+    val isAmount = targetDorm?.isAmountBalance == true
+    val unit = targetDorm?.balanceUnit ?: "度"
+    val headerTitle = if (isAmount) "宿舍电费" else "宿舍电量"
     val roomName = targetDorm?.let { d ->
         val building = d.building.name.trim()
         val room = d.room.name.trim()
@@ -214,8 +219,10 @@ fun formatElectricityWidget(
     }
     if (electric == null) {
         return WidgetElectricityCard(
+            headerTitle = headerTitle,
             balanceText = "待查询",
-            caption = if (dorm != null) "点击右侧刷新查询电量" else "打开 App 选择宿舍",
+            unit = unit,
+            caption = if (dorm != null) (if (isAmount) "点击右侧刷新查询电费" else "点击右侧刷新查询电量") else "打开 App 选择宿舍",
             isLow = false,
             roomName = roomName,
             updatedText = error ?: if (dorm != null) "尚无查询记录" else "点击绑定宿舍",
@@ -229,8 +236,15 @@ fun formatElectricityWidget(
     val timePattern = if (checkedZoned.toLocalDate() == now.toLocalDate()) "HH:mm 更新" else "M/d HH:mm 更新"
     val updatedText = error ?: checkedZoned.format(DateTimeFormatter.ofPattern(timePattern))
     return WidgetElectricityCard(
+        headerTitle = headerTitle,
         balanceText = formattedBalance,
-        caption = if (isLow) "电量偏低，记得充值" else "剩余可用电量",
+        unit = unit,
+        caption = when {
+            isLow && isAmount -> "余额偏低，记得充值"
+            isLow -> "电量偏低，记得充值"
+            isAmount -> "剩余可用金额"
+            else -> "剩余可用电量"
+        },
         isLow = isLow,
         roomName = roomName,
         updatedText = updatedText,

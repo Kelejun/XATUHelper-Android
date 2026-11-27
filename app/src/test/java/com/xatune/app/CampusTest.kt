@@ -85,11 +85,61 @@ class CampusTest {
             jar.saveFromResponse(root, listOf(Cookie.Builder().name("datalook_reimbursement_token").value("fixture").hostOnlyDomain(root.host).path("/").build()))
             val net = PayNetwork(jar, root.toString(), server.url("/auth").toString())
             server.enqueue(MockResponse().setBody("""{"messageCode":0,"data":[{"oddl":9183.18,"suml":9237.05}]}"""))
-            val dorm = Dorm(CampusOption("p","P"),CampusOption("a","A"),CampusOption("b","B"),CampusOption("r","R"))
+            val dorm = Dorm(CampusOption("p","P","E017"),CampusOption("a","A"),CampusOption("b","B"),CampusOption("r","R"))
             assertEquals("53.87", net.balance(dorm))
             val request = server.takeRequest(); val body = request.body.readUtf8()
             assertTrue(body.contains("\"projectId\":\"p\"")); assertTrue(body.contains("\"roomid\":\"r\""))
+            assertFalse(body.contains("\"jsonData\""))
             assertEquals("/api/pay/web/payEleCostController/querySydl", request.path)
+        }
+    }
+    @Test fun building16E051UsesNestedJsonDataAndAmountUnit() {
+        MockWebServer().use { server ->
+            server.start(); val jar = Jar(); val root = server.url("/")
+            jar.saveFromResponse(root, listOf(Cookie.Builder().name("datalook_reimbursement_token").value("fixture").hostOnlyDomain(root.host).path("/").build()))
+            val net = PayNetwork(jar, root.toString(), server.url("/auth").toString())
+            server.enqueue(MockResponse().setBody("""{"messageCode":"0","data":[{"id":"p17","projectName":"电费充值","proModelUrl":"electric","factoryCode":"E017"},{"id":"p51","projectName":"16公寓电费充值","proModelUrl":"electric","factoryCode":"E051"}]}"""))
+            server.enqueue(MockResponse().setBody("""{"messageCode":"0","data":[{"buildid":"B1","buildname":"16号楼"}]}"""))
+            server.enqueue(MockResponse().setBody("""{"messageCode":"0","data":[{"roomid":"H101","roomname":"16-101"}]}"""))
+            server.enqueue(MockResponse().setBody("""{"messageCode":"0","data":[{"oddl":48.6,"suml":null}]}"""))
+
+            val projects = net.projects()
+            assertEquals(2, projects.size)
+            val ordinary = projects[0]
+            val building16 = projects[1]
+            assertEquals("E017", ordinary.factoryCode)
+            assertFalse(ordinary.usesNestedJsonData)
+            assertEquals("E051", building16.factoryCode)
+            assertTrue(building16.usesNestedJsonData)
+
+            val buildings = net.buildings(building16.id, "1", building16.factoryCode)
+            assertEquals("B1", buildings.single().id)
+            val rooms = net.rooms(building16.id, "1", "B1", building16.factoryCode)
+            assertEquals("H101", rooms.single().id)
+            val dorm16 = Dorm(building16, CampusOption("1", "未央"), buildings.single(), rooms.single())
+            assertTrue(dorm16.isAmountBalance)
+            assertEquals("元", dorm16.balanceUnit)
+            assertEquals("剩余金额", dorm16.balanceLabel)
+            assertEquals("余额偏低，请及时充值", dorm16.lowBalanceNotice)
+            assertEquals("48.60", net.balance(dorm16))
+
+            // Legacy dorm without factoryCode defaults to ordinary kWh balance.
+            val legacy = Dorm(CampusOption("p17", "电费充值"), CampusOption("1", "未央"), CampusOption("B2", "9号楼"), CampusOption("R1", "9328"))
+            assertFalse(legacy.isAmountBalance)
+            assertEquals("度", legacy.balanceUnit)
+            assertEquals("剩余电量", legacy.balanceLabel)
+
+            server.takeRequest() // getAllProjectList
+            val buildReq = server.takeRequest().body.readUtf8()
+            assertTrue(buildReq.contains("\"projectId\":\"p51\""))
+            assertTrue(buildReq.contains("\"jsonData\""))
+            assertTrue(buildReq.contains("\"areaid\":\"1\""))
+            val roomReq = server.takeRequest().body.readUtf8()
+            assertTrue(roomReq.contains("\"jsonData\""))
+            assertTrue(roomReq.contains("\"buildid\":\"B1\""))
+            val balReq = server.takeRequest().body.readUtf8()
+            assertTrue(balReq.contains("\"jsonData\""))
+            assertTrue(balReq.contains("\"roomid\":\"H101\""))
         }
     }
     @Test fun calendarSelectsOfficialContentAndImageInsteadOfLogo() {
