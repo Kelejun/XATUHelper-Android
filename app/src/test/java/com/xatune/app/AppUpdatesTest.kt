@@ -147,14 +147,14 @@ class AppUpdatesTest {
             repo.check(manual = true)
             assertEquals(0, server.requestCount)
             assertFalse(repo.state.value.logs.first().success)
-            assertTrue(repo.state.value.logs.first().detail.contains("后端 API 仅支持稳定版"))
+            assertTrue(repo.state.value.logs.first().detail.contains("国内服务器仅支持稳定版"))
 
             repo.configure { it.copy(channel = UpdateChannel.RELEASE, server = UpdateServer.API) }
             server.enqueue(MockResponse().setResponseCode(404))
             repo.check(manual = true)
             assertEquals(1, server.requestCount)
             assertFalse(repo.state.value.logs.first().success)
-            assertTrue(repo.state.value.logs.first().detail.contains("后端 API"))
+            assertTrue(repo.state.value.logs.first().detail.contains("国内服务器"))
         }
     }
 

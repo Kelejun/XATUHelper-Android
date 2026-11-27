@@ -44,7 +44,7 @@ internal fun UpdateSettingsPanel(
                 selected = settings.server == UpdateServer.API,
                 enabled = settings.channel == UpdateChannel.RELEASE,
                 onClick = { onServer(UpdateServer.API) },
-                label = { Text("后端 API") },
+                label = { Text("国内服务器") },
                 modifier = Modifier.testTag("updateServer-api")
             )
             FilterChip(

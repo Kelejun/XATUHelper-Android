@@ -100,13 +100,13 @@ import java.time.format.DateTimeFormatter
                 if (apiUrl != null) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = { openLink(apiUrl) },
-                            modifier = Modifier.fillMaxWidth().testTag("updateDownloadApi")
-                        ) { Text("后端 API 下载") }
-                        OutlinedButton(
                             onClick = { openLink(release.url) },
                             modifier = Modifier.fillMaxWidth().testTag("updateDownloadGithub")
                         ) { Text("前往 GitHub 下载") }
+                        OutlinedButton(
+                            onClick = { openLink(apiUrl) },
+                            modifier = Modifier.fillMaxWidth().testTag("updateDownloadApi")
+                        ) { Text("国内服务器下载") }
                     }
                 }
             }

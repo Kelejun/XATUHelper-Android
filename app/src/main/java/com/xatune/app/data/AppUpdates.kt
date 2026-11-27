@@ -61,9 +61,9 @@ fun updateManifestUrl(channel: UpdateChannel, server: UpdateServer): String = wh
     UpdateServer.GITHUB -> updateManifestUrl(channel)
     UpdateServer.API -> when (channel) {
         UpdateChannel.RELEASE -> API_RELEASE_MANIFEST_URL
-        UpdateChannel.PRERELEASE -> throw IOException("后端 API 仅支持稳定版更新，请切换至稳定版或选择 GitHub")
+        UpdateChannel.PRERELEASE -> throw IOException("国内服务器仅支持稳定版更新，请切换至稳定版或选择 GitHub")
     }
-    UpdateServer.OTHER -> throw IOException("其他服务器暂未接入，请选择 GitHub 或后端 API")
+    UpdateServer.OTHER -> throw IOException("其他服务器暂未接入，请选择 GitHub 或国内服务器")
 }
 fun apiReleaseArch(supportedAbis: List<String> = android.os.Build.SUPPORTED_ABIS?.toList().orEmpty()): String {
     for (abi in supportedAbis) {
@@ -138,9 +138,9 @@ class AppUpdateRepository(
         } ?: return@check
         try {
             val release = withContext(Dispatchers.IO) {
-                if (settings.server == UpdateServer.OTHER) throw IOException("其他服务器暂未接入，请选择 GitHub 或后端 API")
+                if (settings.server == UpdateServer.OTHER) throw IOException("其他服务器暂未接入，请选择 GitHub 或国内服务器")
                 if (settings.server == UpdateServer.API && settings.channel != UpdateChannel.RELEASE) {
-                    throw IOException("后端 API 仅支持稳定版更新，请切换至稳定版或选择 GitHub")
+                    throw IOException("国内服务器仅支持稳定版更新，请切换至稳定版或选择 GitHub")
                 }
                 val json = JsonParser.parseString(downloadManifest(settings.channel, settings.server)).asJsonObject
                 if (json.get("schemaVersion")?.asInt != 1 || json.get("applicationId")?.asString != "com.xatune.app")
@@ -164,7 +164,7 @@ class AppUpdateRepository(
             record(settings, !manual, true, if (newer) "发现新版本 ${release.version}（${release.versionCode}）" else "当前已是最新版本", release.takeIf { newer })
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
-            val serverName = if (settings.server == UpdateServer.API) "后端 API" else "GitHub"
+            val serverName = if (settings.server == UpdateServer.API) "国内服务器" else "GitHub"
             val reason = when (e) {
                 is java.net.UnknownHostException -> "无法解析${serverName}地址，请检查网络"
                 is java.net.SocketTimeoutException -> "连接${serverName}超时"
@@ -176,7 +176,7 @@ class AppUpdateRepository(
         }
     }
     private fun downloadManifest(channel: UpdateChannel, server: UpdateServer): String {
-        val serverName = if (server == UpdateServer.API) "后端 API" else "GitHub"
+        val serverName = if (server == UpdateServer.API) "国内服务器" else "GitHub"
         val primary = endpoint(channel, server).toHttpUrl()
         // Older GitHub Releases still use update.json. Only a missing new filename may fall back,
         // and both requests stay under the selected channel's original download path.
