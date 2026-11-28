@@ -159,10 +159,90 @@ class SchoolNetwork(cookies: CookieJar, private val base: String = SchoolUrls.ea
         val (html, url) = request(loginUrl, auth = false)
         url.toHttpUrl().host == base.toHttpUrl().host && !EamsParser.isLogin(html) && !html.contains("execution")
     } catch (_: java.io.IOException) { false }
+    private fun resolveUrl(raw: String, currentUrl: String): HttpUrl? {
+        val cleaned = raw.trim().trim('?', '&')
+        if (cleaned.isEmpty()) return null
+        if (cleaned.startsWith("http://", ignoreCase = true) || cleaned.startsWith("https://", ignoreCase = true)) {
+            return cleaned.toHttpUrlOrNull()
+        }
+        val baseUrl = base.toHttpUrl()
+        if (cleaned.startsWith("/eams/") || cleaned.startsWith(baseUrl.encodedPath)) {
+            return baseUrl.resolve(cleaned)
+        }
+        if (cleaned.startsWith("/")) {
+            return (base.trimEnd('/') + cleaned).toHttpUrlOrNull()
+        }
+        return currentUrl.toHttpUrlOrNull()?.resolve(cleaned) ?: baseUrl.resolve(cleaned)
+    }
+    private fun appendQuery(url: HttpUrl, items: List<Pair<String, String>>): HttpUrl {
+        if (items.isEmpty()) return url
+        val existingNames = url.queryParameterNames
+        val missing = items.filter { (name, _) -> name !in existingNames }
+        if (missing.isEmpty()) return url
+        return url.newBuilder().apply {
+            missing.forEach { (name, value) -> addQueryParameter(name, value) }
+        }.build()
+    }
+    private fun resolveMultiProjectIfNeeded(
+        html: String,
+        finalUrl: String,
+        modulePath: String,
+        query: Map<String, String>
+    ): Pair<String, String?> {
+        val wrapper = EamsParser.parseMultiProjectWrapper(html, modulePath) ?: return html to null
+        var currentUrl = finalUrl
+        var targetInnerPath = wrapper.innerPath
+        var resolvedProjectId = wrapper.projectId
+
+        val switchHref = wrapper.switchHref
+        if (switchHref != null) {
+            val switchUrl = resolveUrl(switchHref, currentUrl)
+            if (switchUrl != null) {
+                val (switchedHtml, switchedUrl) = request(switchUrl.toString())
+                currentUrl = switchedUrl
+                val updated = EamsParser.parseMultiProjectWrapper(switchedHtml, modulePath)
+                if (updated != null) {
+                    targetInnerPath = updated.innerPath
+                    resolvedProjectId = updated.projectId ?: resolvedProjectId
+                } else {
+                    return switchedHtml to resolvedProjectId
+                }
+            }
+        }
+
+        val rawInnerUrl = resolveUrl(targetInnerPath, currentUrl) ?: throw ParseFailure("无法解析教务内页地址")
+        val extraQuery = mutableListOf<Pair<String, String>>()
+        if (!resolvedProjectId.isNullOrEmpty() &&
+            !targetInnerPath.contains("projectId=", ignoreCase = true) &&
+            !targetInnerPath.contains("project.id=", ignoreCase = true) &&
+            "projectId" !in rawInnerUrl.queryParameterNames &&
+            "project.id" !in rawInnerUrl.queryParameterNames
+        ) {
+            extraQuery.add("projectId" to resolvedProjectId)
+        }
+        query.forEach { (key, value) -> extraQuery.add(key to value) }
+        val innerUrl = appendQuery(rawInnerUrl, extraQuery)
+        return request(innerUrl.toString()).first to resolvedProjectId
+    }
+    private fun pageWithProject(path: String, query: Map<String, String> = emptyMap()): Pair<String, String?> {
+        val url = (base + path).toHttpUrl().newBuilder().apply { query.forEach { (key, value) -> addQueryParameter(key, value) } }.build()
+        val (html, finalUrl) = request(url.toString())
+        val modulePath = base.toHttpUrl().encodedPath + path
+        return resolveMultiProjectIfNeeded(html, finalUrl, modulePath, query)
+    }
     fun shell(): com.xatune.app.model.Shell {
-        val html = request(base + "courseTableForStd.action").first
-        val project = request(base + "dataQuery.action", mapOf("dataType" to "projectId")).first.trim().trim('"', '\'')
-        return EamsParser.shell(html, project.takeIf { it.matches(Regex("\\d*")) } ?: "")
+        val (html, resolvedProject) = pageWithProject("courseTableForStd.action")
+        val fetchedProject = try {
+            request(base + "dataQuery.action", mapOf("dataType" to "projectId")).first.trim().trim('"', '\'')
+        } catch (e: SessionExpired) {
+            throw e
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            ""
+        }
+        val project = fetchedProject.takeIf { it.matches(Regex("\\d+")) } ?: resolvedProject.orEmpty()
+        return EamsParser.shell(html, project)
     }
     fun semesters(shell: com.xatune.app.model.Shell) = EamsParser.semesters(request(base + "dataQuery.action", mapOf("tagId" to shell.tagId, "dataType" to "semesterCalendar", "value" to shell.semesterId, "empty" to "false")).first)
     fun officialWeek(): Int? = EamsParser.officialWeek(request(base + "homeExt!main.action").first)
@@ -170,10 +250,7 @@ class SchoolNetwork(cookies: CookieJar, private val base: String = SchoolUrls.ea
         val id = if (kind == com.xatune.app.model.TableKind.STUDENT) shell.studentId else shell.classId ?: throw IllegalStateException("这个账号没有班级课表")
         return TimetableParser.parse(request(base + "courseTableForStd!courseTable.action", mapOf("ignoreHead" to "1", "setting.kind" to kind.wire, "startWeek" to "", "project.id" to shell.projectId, "semester.id" to semester, "ids" to id)).first)
     }
-    private fun page(path: String, query: Map<String, String> = emptyMap()): String {
-        val url = (base + path).toHttpUrl().newBuilder().apply { query.forEach { (key, value) -> addQueryParameter(key, value) } }.build()
-        return request(url.toString()).first
-    }
+    private fun page(path: String, query: Map<String, String> = emptyMap()): String = pageWithProject(path, query).first
     fun exams(semester: String): List<com.xatune.app.model.Exam> {
         val shell = page("stdExamTable.action", mapOf("semester.id" to semester))
         val batches = Jsoup.parse(shell).select("select[name=examBatch.id] option[value]").map { it.attr("value") }.filter { it.toLongOrNull() != null }

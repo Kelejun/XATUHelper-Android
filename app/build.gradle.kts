@@ -23,8 +23,8 @@ android {
         applicationId = "com.xatune.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 75
-        versionName = "1.1.12"
+        versionCode = 76
+        versionName = "1.1.13"
         buildConfigField("String", "PUSH_CHANNEL", "\"$pushChannel\"")
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommit\"")
         buildConfigField("String", "ANNOUNCEMENTS_BASE_URL", "\"${providers.gradleProperty("announcementsBaseUrl").orElse("https://api.xatune.cn").get()}\"")
